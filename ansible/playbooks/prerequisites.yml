@@ -1,0 +1,57 @@
+---
+- name: Install prerequisites for RKE2 on Ubuntu Server
+  hosts: all
+  become: yes
+  tasks:
+    - name: Update package database
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      ansible.builtin.apt:
+        name:
+          - curl
+          - tar
+          - iptables
+          - conntrack-tools
+          - linux-headers-generic
+        state: present
+
+    - name: Load kernel modules
+      ansible.builtin.modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+
+    - name: Make kernel modules persistent
+      ansible.builtin.lineinfile:
+        path: /etc/modules-load.d/rke2.conf
+        line: "{{ item }}"
+        create: yes
+      loop:
+        - overlay
+        - br_netfilter
+
+    - name: Configure sysctl for Kubernetes
+      ansible.builtin.sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      loop:
+        - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+        - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+        - { name: 'net.ipv4.ip_forward', value: '1' }
+
+    - name: Disable swap
+      ansible.builtin.command: swapoff -a
+      changed_when: false
+
+    - name: Comment out swap in fstab
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: '^([^#].*swap.*)$'
+        replace: '#\1'

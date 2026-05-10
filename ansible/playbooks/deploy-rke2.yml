@@ -1,0 +1,24 @@
+---
+- name: Deploy RKE2 cluster
+  hosts: all
+  become: yes
+  roles:
+    - role: rke2-ansible
+      rke2_type: server
+      when: inventory_hostname in groups['controlplane']
+    - role: rke2-ansible
+      rke2_type: agent
+      when: inventory_hostname in groups['worker']
+
+  post_tasks:
+    - name: Wait for cluster to be ready
+      ansible.builtin.pause:
+        seconds: 30
+      when: inventory_hostname in groups['controlplane'][0]
+
+    - name: Get kubeconfig
+      ansible.builtin.fetch:
+        src: /etc/rancher/rke2/rke2.yaml
+        dest: ./kubeconfig
+        flat: yes
+      when: inventory_hostname in groups['controlplane'][0]
