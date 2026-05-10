@@ -1,7 +1,7 @@
 variable "ubuntu_image_path" {
-  description = "Path to the Ubuntu Server 26.04 QCOW2 image"
+  description = "Path to the Ubuntu Server 26.04 Resolute QCOW2 image"
   type        = string
-  default     = "/mnt/raid1/LLM_enterprise_storage/img/ubuntu-26.04-base.qcow2"
+  default     = "/mnt/raid1/LLM_enterprise_storage/img/ubuntu-26.04-server-cloudimg-amd64.img"
 }
 
 variable "storage_pool" {

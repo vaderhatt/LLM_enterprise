@@ -10,12 +10,12 @@ The hosts are QEMU/KVM headless VMs running on a single Gentoo physical machine.
 
 **Prerequisites for Gentoo Host:**
 - libvirt and QEMU installed and running
-- Ubuntu 26.04 QCOW2 image downloaded to `/mnt/raid1/LLM_enterprise_storage/img/ubuntu-26.04-base.qcow2`
+- Ubuntu 26.04 Resolute QCOW2 image downloaded to `/mnt/raid1/LLM_enterprise_storage/img/ubuntu-26.04-server-cloudimg-amd64.img`
 
 **Steps:**
-1. Download Ubuntu 26.04 cloud image:
+1. Download Ubuntu 26.04 Resolute cloud image:
    ```bash
-   wget https://cloud-images.ubuntu.com/oracular/current/oracular-server-cloudimg-amd64.img -O /mnt/raid1/LLM_enterprise_storage/img/ubuntu-26.04-base.qcow2
+   wget https://cloud-images.ubuntu.com/releases/resolute/release/ubuntu-26.04-server-cloudimg-amd64.img -O /mnt/raid1/LLM_enterprise_storage/img/ubuntu-26.04-server-cloudimg-amd64.img
    ```
 
 2. Set up libvirt/QEMU on Gentoo host as described in "Provisioning Hosts" section.
