@@ -4,22 +4,32 @@ variable "ubuntu_image_path" {
   default     = "/mnt/raid1/LLM_enterprise_storage/img/ubuntu-22.04-base.qcow2"
 }
 
-variable "vm_cpus" {
-  description = "Number of virtual CPUs for each VM"
-  type        = number
-  default     = 2
+variable "control_plane_vm" {
+  description = "Sizing for control-plane VMs"
+  type = object({
+    cpus         = number
+    memory_mib   = number
+    disk_size_gb = number
+  })
+  default = {
+    cpus         = 2
+    memory_mib   = 4096
+    disk_size_gb = 20
+  }
 }
 
-variable "vm_memory_mib" {
-  description = "Memory size in MiB for each VM"
-  type        = number
-  default     = 2048
-}
-
-variable "vm_disk_size_gb" {
-  description = "Disk size in GiB for each VM"
-  type        = number
-  default     = 10
+variable "worker_vm" {
+  description = "Sizing for worker VMs"
+  type = object({
+    cpus         = number
+    memory_mib   = number
+    disk_size_gb = number
+  })
+  default = {
+    cpus         = 2
+    memory_mib   = 2048
+    disk_size_gb = 10
+  }
 }
 
 variable "network_name" {
