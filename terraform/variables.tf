@@ -4,6 +4,12 @@ variable "ubuntu_image_path" {
   default     = "/mnt/raid1/LLM_enterprise_storage/img/ubuntu-22.04-base.qcow2"
 }
 
+variable "environment" {
+  description = "Deployment environment name"
+  type        = string
+  default     = "dev"
+}
+
 variable "control_plane_vm" {
   description = "Sizing for control-plane VMs"
   type = object({

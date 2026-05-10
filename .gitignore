@@ -1,2 +1,4 @@
 terraform/.terraform/
 terraform/schema.json
+.terragrunt-cache/
+live/**/*.tfstate

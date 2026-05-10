@@ -19,6 +19,8 @@ resource "libvirt_volume" "ubuntu_base" {
 }
 
 locals {
+  env_prefix = var.environment != "" ? "${var.environment}-" : ""
+
   control_plane_nodes = {
     for idx, name in ["cp1", "cp2", "cp3"] : name => {
       ip = var.control_plane_ips[idx]
@@ -33,7 +35,7 @@ locals {
 }
 
 resource "libvirt_network" "rke2_net" {
-  name      = var.network_name
+  name      = "${local.env_prefix}${var.network_name}"
   mode      = "nat"
   addresses = [var.network_cidr]
 
@@ -50,7 +52,7 @@ module "control_plane" {
   source   = "./modules/node"
   for_each = local.control_plane_nodes
 
-  name                        = each.key
+  name                        = "${local.env_prefix}${each.key}"
   ip_address                  = each.value.ip
   ubuntu_image_base_volume_id = libvirt_volume.ubuntu_base.id
   vm                          = var.control_plane_vm
@@ -63,7 +65,7 @@ module "worker" {
   source   = "./modules/node"
   for_each = local.worker_nodes
 
-  name                        = each.key
+  name                        = "${local.env_prefix}${each.key}"
   ip_address                  = each.value.ip
   ubuntu_image_base_volume_id = libvirt_volume.ubuntu_base.id
   vm                          = var.worker_vm
