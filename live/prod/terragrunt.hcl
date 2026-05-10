@@ -18,12 +18,12 @@ inputs = {
   control_plane_vm = {
     cpus         = 2
     memory_mib   = 4096
-    disk_size_gb = 20
+    disk_size_gb = 50
   }
 
   worker_vm = {
     cpus         = 2
-    memory_mib   = 2048
-    disk_size_gb = 10
+    memory_mib   = 16536
+    disk_size_gb = 50
   }
 }
