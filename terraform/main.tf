@@ -59,7 +59,7 @@ module "control_plane" {
   network_id                  = libvirt_network.rke2_net.id
   storage_pool                = var.storage_pool
   user_data                   = templatefile("${path.module}/cloud_init.cfg", { hostname = each.key })
-  network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = each.value.ip })
+  network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = each.value.ip, network_gateway = var.network_gateway })
 }
 
 module "worker" {
@@ -73,5 +73,5 @@ module "worker" {
   network_id                  = libvirt_network.rke2_net.id
   storage_pool                = var.storage_pool
   user_data                   = templatefile("${path.module}/cloud_init.cfg", { hostname = each.key })
-  network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = each.value.ip })
+  network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = each.value.ip, network_gateway = var.network_gateway })
 }
