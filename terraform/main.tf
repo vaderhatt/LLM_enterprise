@@ -13,7 +13,7 @@ provider "libvirt" {
 
 resource "libvirt_volume" "ubuntu_base" {
   name   = "ubuntu-base.qcow2"
-  pool   = "default"
+  pool   = var.storage_pool
   source = var.ubuntu_image_path
   format = "qcow2"
 }
@@ -57,6 +57,7 @@ module "control_plane" {
   ubuntu_image_base_volume_id = libvirt_volume.ubuntu_base.id
   vm                          = var.control_plane_vm
   network_id                  = libvirt_network.rke2_net.id
+  storage_pool                = var.storage_pool
   user_data                   = templatefile("${path.module}/cloud_init.cfg", { hostname = each.key })
   network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = each.value.ip })
 }
@@ -70,6 +71,7 @@ module "worker" {
   ubuntu_image_base_volume_id = libvirt_volume.ubuntu_base.id
   vm                          = var.worker_vm
   network_id                  = libvirt_network.rke2_net.id
+  storage_pool                = var.storage_pool
   user_data                   = templatefile("${path.module}/cloud_init.cfg", { hostname = each.key })
   network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = each.value.ip })
 }

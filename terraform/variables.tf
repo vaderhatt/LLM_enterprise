@@ -4,6 +4,12 @@ variable "ubuntu_image_path" {
   default     = "/mnt/raid1/LLM_enterprise_storage/img/ubuntu-22.04-base.qcow2"
 }
 
+variable "storage_pool" {
+  description = "Libvirt storage pool name for VM disks and cloud-init ISOs"
+  type        = string
+  default     = "rke2-storage"
+}
+
 variable "environment" {
   description = "Deployment environment name"
   type        = string

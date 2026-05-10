@@ -1,13 +1,13 @@
 resource "libvirt_volume" "vm" {
   name           = "${var.name}.qcow2"
   base_volume_id = var.ubuntu_image_base_volume_id
-  pool           = "default"
+  pool           = var.storage_pool
   size           = var.vm.disk_size_gb * 1024 * 1024 * 1024
 }
 
 resource "libvirt_cloudinit_disk" "init" {
   name           = "${var.name}-init.iso"
-  pool           = "default"
+  pool           = var.storage_pool
   user_data      = var.user_data
   network_config = var.network_config
 }

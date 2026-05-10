@@ -36,3 +36,8 @@ variable "network_id" {
   description = "Libvirt network ID for the VM network interface"
   type        = string
 }
+
+variable "storage_pool" {
+  description = "Libvirt storage pool name for VM disks and cloud-init ISOs"
+  type        = string
+}

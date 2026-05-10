@@ -8,6 +8,7 @@ terraform {
 
 inputs = {
   environment      = "dev"
+  storage_pool     = "rke2-storage"
   network_name     = "rke2-net"
   network_cidr     = "10.10.1.0/24"
   network_gateway  = "10.10.1.1"
