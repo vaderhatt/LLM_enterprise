@@ -200,8 +200,9 @@ The environment inventory content is rendered by Terraform from [terraform/inven
 - Environment-specific control plane groups such as `[dev_controlplane]`
 - Environment-specific worker groups such as `[dev_worker]`
 - Aggregate `[controlplane]` and `[worker]` groups in `all.ini`
-- RKE2 role groups in `[rke2_servers]`, `[rke2_agents]`, and `[rke2_cluster]`
 - SSH connection parameters for each node
+
+`all.ini` intentionally does not define aggregate `rke2_servers`, `rke2_agents`, or `rke2_cluster` groups. Use per-environment inventories such as `dev.ini` for RKE2 deployment, and use `all.ini` for operational tasks across all environments.
 
 **Note:** These generated inventory files are in `.gitignore` and should not be committed.
 

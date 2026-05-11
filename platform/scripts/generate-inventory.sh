@@ -84,16 +84,6 @@ echo "Generated Ansible inventory: $inventory_path"
         [[ -f "$inventory_dir/$env.ini" ]] && printf '%s_worker\n' "$env"
     done
 
-    printf '\n[rke2_servers:children]\n'
-    printf 'controlplane\n'
-
-    printf '\n[rke2_agents:children]\n'
-    printf 'worker\n'
-
-    printf '\n[rke2_cluster:children]\n'
-    printf 'rke2_servers\n'
-    printf 'rke2_agents\n'
-
     printf '\n[all:vars]\n'
     printf 'ansible_python_interpreter=/usr/bin/python3\n'
     printf "ansible_ssh_common_args='-o UserKnownHostsFile=.ssh/known_hosts -o StrictHostKeyChecking=yes'\n"

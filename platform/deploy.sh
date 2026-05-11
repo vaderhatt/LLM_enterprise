@@ -187,6 +187,16 @@ run_rke2_deploy() {
     log_success "RKE2 deployment completed"
 }
 
+# Bootstrap Flux GitOps
+bootstrap_flux() {
+    log_info "Bootstrapping Flux GitOps..."
+    cd "$ANSIBLE_DIR"
+
+    INVENTORY="$ANSIBLE_INVENTORY"
+    ansible-playbook playbooks/bootstrap-flux.yml -i "$INVENTORY"
+    log_success "Flux bootstrap completed"
+}
+
 # Main workflow
 main() {
     log_info "Starting RKE2 Infrastructure Deployment"
@@ -202,12 +212,21 @@ main() {
     if [[ $REPLY == "yes" ]]; then
         run_prerequisites || exit 1
         run_rke2_deploy || exit 1
-        log_success "RKE2 cluster deployment completed!"
+        read -p "Ready to bootstrap Flux GitOps? (yes/no): " -r || REPLY="no"
+        if [[ $REPLY == "yes" ]]; then
+            bootstrap_flux || exit 1
+        else
+            log_warn "Flux bootstrap skipped"
+            log_info "To run manually, use:"
+            log_info "  ansible-playbook ansible/playbooks/bootstrap-flux.yml -i ansible/$ANSIBLE_INVENTORY"
+        fi
+        log_success "RKE2 cluster deployment workflow completed!"
     else
         log_warn "Ansible playbooks skipped"
         log_info "To run manually, use:"
         log_info "  ansible-playbook ansible/playbooks/prerequisites.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/deploy-rke2.yml -i ansible/$ANSIBLE_INVENTORY -b"
+        log_info "  ansible-playbook ansible/playbooks/bootstrap-flux.yml -i ansible/$ANSIBLE_INVENTORY"
     fi
 }
 
