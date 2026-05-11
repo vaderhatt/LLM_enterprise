@@ -1,11 +1,16 @@
-variable "ubuntu_image_path" {
-  description = "Path to the Ubuntu Server 26.04 Resolute QCOW2 image"
+variable "data_dir" {
+  description = "Base directory for VM disks, cloud-init ISOs, and source images"
   type        = string
-  default     = "/mnt/raid1/LLM_enterprise_storage/img/ubuntu-26.04-server-cloudimg-amd64.img"
+}
+
+variable "ubuntu_image_path" {
+  description = "Path to the Ubuntu Server 26.04 Resolute QCOW2 image. Defaults to <data_dir>/img/ubuntu-26.04-server-cloudimg-amd64.img."
+  type        = string
+  default     = null
 }
 
 variable "storage_pool" {
-  description = "Libvirt storage pool name for VM disks and cloud-init ISOs"
+  description = "Base libvirt storage pool name for VM disks and cloud-init ISOs. The environment name is prefixed by Terraform."
   type        = string
   default     = "rke2-storage"
 }
@@ -90,5 +95,5 @@ variable "ansible_user" {
 variable "ansible_ssh_private_key_file" {
   description = "Path to the SSH private key for the ansible user"
   type        = string
-  default     = "/home/ansible/.ssh/id_ed25519"
+  default     = ".ssh/id_ed25519"
 }

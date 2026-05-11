@@ -10,12 +10,14 @@ The hosts are QEMU/KVM headless VMs running on a single Gentoo physical machine.
 
 **Prerequisites for Gentoo Host:**
 - libvirt and QEMU installed and running
-- Ubuntu 26.04 Resolute QCOW2 image downloaded to `/mnt/raid1/LLM_enterprise_storage/img/ubuntu-26.04-server-cloudimg-amd64.img`
+- Ubuntu 26.04 Resolute QCOW2 image downloaded under the configured Terraform `data_dir`
 
 **Steps:**
 1. Download Ubuntu 26.04 Resolute cloud image:
    ```bash
-   wget https://cloud-images.ubuntu.com/releases/resolute/release/ubuntu-26.04-server-cloudimg-amd64.img -O /mnt/raid1/LLM_enterprise_storage/img/ubuntu-26.04-server-cloudimg-amd64.img
+   DATA_DIR=/mnt/raid1/LLM_enterprise_storage
+   mkdir -p "$DATA_DIR/img"
+   wget https://cloud-images.ubuntu.com/releases/resolute/release/ubuntu-26.04-server-cloudimg-amd64.img -O "$DATA_DIR/img/ubuntu-26.04-server-cloudimg-amd64.img"
    ```
 
 2. Set up libvirt/QEMU on Gentoo host as described in "Provisioning Hosts" section.
@@ -23,8 +25,8 @@ The hosts are QEMU/KVM headless VMs running on a single Gentoo physical machine.
    ```bash
    cd terraform
    terraform init
-   terraform plan
-   terraform apply
+   terraform plan -var="data_dir=$DATA_DIR"
+   terraform apply -var="data_dir=$DATA_DIR"
    ```
 
 4. VMs will be created with static IPs on 10.10.1.0/24 and start in headless mode.

@@ -12,7 +12,7 @@ This guide covers the complete Infrastructure as Code (IaC) integration for depl
 │  └─ Network configuration
 └─────────────────────────────────────────┘
                     ↓
-     (Generates: hosts.ini.generated)
+    (Generates: dev.ini, stage.ini, or prod.ini)
                     ↓
 ┌─────────────────────────────────────────┐
 │  Ansible (OS Preparation & Deployment)  │
@@ -30,7 +30,7 @@ This guide covers the complete Infrastructure as Code (IaC) integration for depl
 ### 1. Automated Deployment (Recommended)
 
 ```bash
-cd /mnt/raid1/LLM_enterprise_git/LLM_enterprise
+# From the project root
 chmod +x deploy.sh
 ./deploy.sh
 ```
@@ -48,7 +48,8 @@ This script will:
 #### Step 1: Provision Infrastructure with Terraform
 
 ```bash
-cd /mnt/raid1/LLM_enterprise_git/LLM_enterprise/live/dev
+# From the project root
+cd live/dev
 terragrunt plan        # Review the infrastructure changes
 terragrunt apply       # Provision VMs, network, storage pool
 ```
@@ -58,18 +59,20 @@ This creates:
 - 3 worker VMs (worker1, worker2, worker3) at 10.10.1.21-23
 - Libvirt network `dev-rke2-net`
 - Libvirt storage pool `rke2-storage`
+- VM disks and cloud-init ISOs under the environment's `data_dir` input
 - Cloud-init configurations with SSH keys for the `ansible` user
 
 **Generated files:**
-- `ansible/inventory/hosts.ini.generated` - Dynamic inventory
+- `ansible/inventory/dev.ini` - Dynamic inventory for the dev environment
 
 #### Step 2: Verify VM Connectivity
 
 ```bash
-cd /mnt/raid1/LLM_enterprise_git/LLM_enterprise/ansible
+# From the project root
+cd ansible
 
 # Test SSH connectivity to all nodes
-ansible all -i inventory/hosts.ini.generated -m ping
+ansible all -i inventory/dev.ini -m ping
 ```
 
 **Expected output:**
@@ -82,13 +85,14 @@ cp2 | SUCCESS => {"ansible_facts": {...}, "changed": false, "ping": "pong"}
 #### Step 3: Run Ansible Playbooks
 
 ```bash
-cd /mnt/raid1/LLM_enterprise_git/LLM_enterprise/ansible
+# From the project root
+cd ansible
 
 # 1. Prepare the OS on all nodes
-ansible-playbook playbooks/prerequisites.yml -i inventory/hosts.ini.generated -b
+ansible-playbook playbooks/prerequisites.yml -i inventory/dev.ini -b
 
 # 2. Deploy RKE2
-ansible-playbook playbooks/deploy-rke2.yml -i inventory/hosts.ini.generated -b
+ansible-playbook playbooks/deploy-rke2.yml -i inventory/dev.ini -b
 ```
 
 ## Configuration
@@ -103,11 +107,16 @@ ansible/.ssh/id_ed25519.pub
 ansible/.ssh/known_hosts
 ```
 
-These files are generated runtime artifacts and are ignored by git. `deploy.sh` copies the private/public key from `/home/ansible/.ssh/id_ed25519*`, fixes permissions, exports the public key to Terraform for cloud-init, and rewrites the generated inventory to use the repo-local private key.
+These files are generated runtime artifacts and are ignored by git. `deploy.sh` copies the private/public key from `${HOME}/.ssh/id_ed25519*` by default, fixes permissions, exports the public key to Terraform for cloud-init, and rewrites the generated inventory to use paths relative to the Ansible project directory. Set `ANSIBLE_KEY_SOURCE` before running the script to use a different local source key.
 
 The related Terraform variables are defined in [terraform/variables.tf](terraform/variables.tf):
 
 ```hcl
+variable "data_dir" {
+  description = "Base directory for VM disks, cloud-init ISOs, and source images"
+  type        = string
+}
+
 variable "ssh_public_key" {
   description = "SSH public key for the ansible user (ed25519 format)"
   type        = string
@@ -118,15 +127,15 @@ variable "ssh_public_key" {
 variable "ansible_ssh_private_key_file" {
   description = "Path to the SSH private key for the ansible user"
   type        = string
-  default     = "/home/ansible/.ssh/id_ed25519"
+  default     = ".ssh/id_ed25519"
 }
 ```
 
 **To use a different source key:**
 
-1. Create or install the key for the local `ansible` user:
+1. Create or install the key you want to use locally:
    ```bash
-  sudo -u ansible ssh-keygen -t ed25519 -f /home/ansible/.ssh/id_ed25519 -C "ansible@rke2"
+  ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -C "ansible@rke2"
    ```
 
 2. Run deployment from the repo root:
@@ -134,7 +143,7 @@ variable "ansible_ssh_private_key_file" {
   ./deploy.sh
    ```
 
-The generated Ansible inventory will reference `ansible/.ssh/id_ed25519` through an absolute path and use `ansible/.ssh/known_hosts`, so stale entries in the caller's global `~/.ssh/known_hosts` do not break redeployments.
+The generated Ansible inventory will reference `.ssh/id_ed25519` and `.ssh/known_hosts` relative to `ansible/`, so stale entries in the caller's global `~/.ssh/known_hosts` do not break redeployments.
 
 ### Network Configuration
 
@@ -181,22 +190,24 @@ variable "worker_vm" {
 After `deploy.sh` runs, the following files are generated from Terragrunt outputs:
 
 ```
-ansible/inventory/hosts.ini.generated
+ansible/inventory/dev.ini
+ansible/inventory/stage.ini
+ansible/inventory/prod.ini
 ```
 
-The inventory content is rendered by Terraform from [terraform/inventory.tpl](terraform/inventory.tpl), exposed through `terragrunt output -raw ansible_inventory`, and written by `deploy.sh`. It contains:
+The environment inventory content is rendered by Terraform from [terraform/inventory.tpl](terraform/inventory.tpl), exposed through `terragrunt output -raw ansible_inventory`, and written by `deploy.sh` to `ansible/inventory/<env>.ini`. It contains:
 - Control plane nodes in `[controlplane]` group
 - Worker nodes in `[worker]` group
 - RKE2 role groups in `[rke2_servers]`, `[rke2_agents]`, and `[rke2_cluster]`
 - SSH connection parameters for each node
 
-**Note:** This file is in `.gitignore` and should not be committed.
+**Note:** These generated inventory files are in `.gitignore` and should not be committed.
 
 ## Troubleshooting
 
 ### SSH Connection Issues
 
-If `ansible all -i inventory/hosts.ini.generated -m ping` fails:
+If `ansible all -i inventory/dev.ini -m ping` fails:
 
 1. **Check VM status:**
    ```bash
@@ -234,7 +245,7 @@ sudo systemctl start libvirtd
 Check prerequisites playbook logs:
 
 ```bash
-ansible-playbook playbooks/prerequisites.yml -i inventory/hosts.ini.generated -b -vvv
+ansible-playbook playbooks/prerequisites.yml -i inventory/dev.ini -b -vvv
 ```
 
 ## File Structure
@@ -255,7 +266,9 @@ LLM_enterprise/
 │   │   └── deploy-rke2.yml      # RKE2 deployment
 │   ├── inventory/
 │   │   ├── hosts.ini            # Manual inventory (reference)
-│   │   └── hosts.ini.generated  # Generated by deploy.sh from Terragrunt output
+│   │   ├── dev.ini              # Generated dev inventory
+│   │   ├── stage.ini            # Generated stage inventory
+│   │   └── prod.ini             # Generated prod inventory
 │   └── roles/
 │       └── rke2-ansible/        # RKE2 Ansible role
 ├── deploy.sh                    # Automated deployment script

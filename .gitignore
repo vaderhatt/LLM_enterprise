@@ -4,7 +4,11 @@ terraform/schema.json
 live/**/*.tfstate
 live/**/*.tfstate.backup
 live/**/.terraform.lock.hcl
-ansible/inventory/hosts.ini.generated
+ansible/inventory/hosts.*.ini.generated
+ansible/inventory/dev.ini
+ansible/inventory/stage.ini
+ansible/inventory/prod.ini
+ansible/inventory/all.ini
 ansible/.ssh/
 ansible/kubeconfig
 ansible/playbooks/kubeconfig

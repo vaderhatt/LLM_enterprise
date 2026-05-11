@@ -4,11 +4,17 @@ include {
 
 terraform {
   source = "../..//terraform"
+
+  after_hook "generate_ansible_inventory" {
+    commands = ["apply"]
+    execute  = ["bash", "${get_terragrunt_dir()}/../../scripts/generate-inventory.sh", "stage", get_terragrunt_dir()]
+  }
 }
 
 inputs = {
   environment      = "stage"
-  storage_pool     = "stage-rke2-storage"
+  data_dir         = "/mnt/raid1/LLM_enterprise_storage"
+  storage_pool     = "rke2-storage"
   network_name     = "rke2-net"
   network_cidr     = "10.10.2.0/24"
   network_gateway  = "10.10.2.1"

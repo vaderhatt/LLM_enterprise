@@ -8,12 +8,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 TERRAFORM_DIR="$PROJECT_ROOT/terraform"
 ANSIBLE_DIR="$PROJECT_ROOT/ansible"
-LIVE_DEV_DIR="$PROJECT_ROOT/live/dev"
+DEPLOY_ENV="${1:-${DEPLOY_ENV:-dev}}"
+LIVE_ENV_DIR="$PROJECT_ROOT/live/$DEPLOY_ENV"
 ANSIBLE_KEY_DIR="$ANSIBLE_DIR/.ssh"
-ANSIBLE_KEY_SOURCE="/home/ansible/.ssh/id_ed25519"
+ANSIBLE_KEY_SOURCE="${ANSIBLE_KEY_SOURCE:-$HOME/.ssh/id_ed25519}"
 ANSIBLE_KEY_PATH="$ANSIBLE_KEY_DIR/id_ed25519"
 ANSIBLE_PUBLIC_KEY_PATH="$ANSIBLE_KEY_PATH.pub"
 ANSIBLE_KNOWN_HOSTS_PATH="$ANSIBLE_KEY_DIR/known_hosts"
+ANSIBLE_INVENTORY_KEY_PATH=".ssh/id_ed25519"
+ANSIBLE_INVENTORY_KNOWN_HOSTS_PATH=".ssh/known_hosts"
+ANSIBLE_INVENTORY="inventory/$DEPLOY_ENV.ini"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -88,8 +92,8 @@ setup_ansible_ssh_key() {
 
 # Terraform plan and apply
 terraform_apply() {
-    log_info "Running Terraform plan and apply..."
-    cd "$LIVE_DEV_DIR"
+    log_info "Running Terraform plan and apply for $DEPLOY_ENV..."
+    cd "$LIVE_ENV_DIR"
     
     terragrunt plan
     read -p "Review the plan above. Continue with apply? (yes/no): " -r
@@ -105,17 +109,17 @@ terraform_apply() {
 configure_inventory_ssh_paths() {
     local inventory_path="$1"
 
-    sed -i "s|ansible_ssh_private_key_file=[^[:space:]]*|ansible_ssh_private_key_file=$ANSIBLE_KEY_PATH|g" "$inventory_path"
+    sed -i "s|ansible_ssh_private_key_file=[^[:space:]]*|ansible_ssh_private_key_file=$ANSIBLE_INVENTORY_KEY_PATH|g" "$inventory_path"
     sed -i "/^ansible_ssh_common_args=/d" "$inventory_path"
-    printf "ansible_ssh_common_args='-o UserKnownHostsFile=%s -o StrictHostKeyChecking=yes'\n" "$ANSIBLE_KNOWN_HOSTS_PATH" >> "$inventory_path"
+    printf "ansible_ssh_common_args='-o UserKnownHostsFile=%s -o StrictHostKeyChecking=yes'\n" "$ANSIBLE_INVENTORY_KNOWN_HOSTS_PATH" >> "$inventory_path"
 }
 
 # Generate Ansible inventory
 generate_inventory() {
     log_info "Generating Ansible inventory from Terraform outputs..."
-    cd "$LIVE_DEV_DIR"
+    cd "$LIVE_ENV_DIR"
     
-    INVENTORY_PATH="$ANSIBLE_DIR/inventory/hosts.ini.generated"
+    INVENTORY_PATH="$ANSIBLE_DIR/$ANSIBLE_INVENTORY"
     mkdir -p "$(dirname "$INVENTORY_PATH")"
     terragrunt output -raw ansible_inventory > "$INVENTORY_PATH"
     configure_inventory_ssh_paths "$INVENTORY_PATH"
@@ -126,7 +130,7 @@ prepare_known_hosts() {
     log_info "Preparing Ansible SSH known_hosts..."
     cd "$ANSIBLE_DIR"
 
-    local inventory="inventory/hosts.ini.generated"
+    local inventory="$ANSIBLE_INVENTORY"
     if [ ! -f "$inventory" ]; then
         log_warn "Inventory not found: $inventory"
         return 1
@@ -145,7 +149,7 @@ wait_for_vms() {
     log_info "Waiting for VMs to accept SSH..."
     cd "$ANSIBLE_DIR"
 
-    INVENTORY="inventory/hosts.ini.generated"
+    INVENTORY="$ANSIBLE_INVENTORY"
     ansible all -i "$INVENTORY" -m wait_for_connection -a "timeout=180"
     log_success "VMs are reachable over SSH"
 }
@@ -155,7 +159,7 @@ test_ssh_connectivity() {
     log_info "Testing SSH connectivity to all nodes..."
     cd "$ANSIBLE_DIR"
     
-    INVENTORY="inventory/hosts.ini.generated"
+    INVENTORY="$ANSIBLE_INVENTORY"
     if [ ! -f "$INVENTORY" ]; then
         log_warn "Inventory not found: $INVENTORY"
         return 1
@@ -170,7 +174,7 @@ run_prerequisites() {
     log_info "Running Ansible prerequisites playbook..."
     cd "$ANSIBLE_DIR"
     
-    INVENTORY="inventory/hosts.ini.generated"
+    INVENTORY="$ANSIBLE_INVENTORY"
     ansible-playbook playbooks/prerequisites.yml -i "$INVENTORY" -b
     log_success "Prerequisites playbook completed"
 }
@@ -180,7 +184,7 @@ run_rke2_deploy() {
     log_info "Running RKE2 deployment playbook..."
     cd "$ANSIBLE_DIR"
     
-    INVENTORY="inventory/hosts.ini.generated"
+    INVENTORY="$ANSIBLE_INVENTORY"
     ansible-playbook playbooks/deploy-rke2.yml -i "$INVENTORY" -b
     log_success "RKE2 deployment completed"
 }
@@ -204,8 +208,8 @@ main() {
     else
         log_warn "Ansible playbooks skipped"
         log_info "To run manually, use:"
-        log_info "  ansible-playbook ansible/playbooks/prerequisites.yml -i ansible/inventory/hosts.ini.generated -b"
-        log_info "  ansible-playbook ansible/playbooks/deploy-rke2.yml -i ansible/inventory/hosts.ini.generated -b"
+        log_info "  ansible-playbook ansible/playbooks/prerequisites.yml -i ansible/$ANSIBLE_INVENTORY -b"
+        log_info "  ansible-playbook ansible/playbooks/deploy-rke2.yml -i ansible/$ANSIBLE_INVENTORY -b"
     fi
 }
 

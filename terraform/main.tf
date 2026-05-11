@@ -21,9 +21,17 @@ provider "libvirt" {
   uri = "qemu:///system"
 }
 
+locals {
+  env_prefix        = var.environment != "" ? "${var.environment}-" : ""
+  data_dir          = trimsuffix(var.data_dir, "/")
+  storage_pool_name = "${local.env_prefix}${var.storage_pool}"
+  storage_pool_path = "${local.data_dir}/VM/${local.storage_pool_name}"
+  ubuntu_image_path = coalesce(var.ubuntu_image_path, "${local.data_dir}/img/ubuntu-26.04-server-cloudimg-amd64.img")
+}
+
 resource "null_resource" "storage_pool_directory" {
   triggers = {
-    path = "/mnt/raid1/LLM_enterprise_storage/VM/${var.storage_pool}"
+    path = local.storage_pool_path
   }
 
   provisioner "local-exec" {
@@ -32,9 +40,9 @@ resource "null_resource" "storage_pool_directory" {
 }
 
 resource "libvirt_pool" "rke2" {
-  name = var.storage_pool
+  name = local.storage_pool_name
   type = "dir"
-  path = "/mnt/raid1/LLM_enterprise_storage/VM/${var.storage_pool}"
+  path = local.storage_pool_path
 
   depends_on = [null_resource.storage_pool_directory]
 }
@@ -55,15 +63,13 @@ resource "null_resource" "storage_pool_active" {
 resource "libvirt_volume" "ubuntu_base" {
   name   = "ubuntu-base.qcow2"
   pool   = libvirt_pool.rke2.name
-  source = var.ubuntu_image_path
+  source = local.ubuntu_image_path
   format = "qcow2"
 
   depends_on = [null_resource.storage_pool_active]
 }
 
 locals {
-  env_prefix = var.environment != "" ? "${var.environment}-" : ""
-
   control_plane_nodes = {
     for idx, name in ["cp1", "cp2", "cp3"] : name => {
       ip = var.control_plane_ips[idx]
@@ -102,7 +108,7 @@ module "control_plane" {
   ubuntu_image_base_volume_id = libvirt_volume.ubuntu_base.id
   vm                          = var.control_plane_vm
   network_id                  = libvirt_network.rke2_net.id
-  storage_pool                = var.storage_pool
+  storage_pool                = local.storage_pool_name
   user_data                   = templatefile("${path.module}/cloud_init.cfg", { hostname = each.key, ansible_user = var.ansible_user, ssh_public_key = var.ssh_public_key })
   network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = each.value.ip, network_gateway = var.network_gateway })
 }
@@ -118,7 +124,7 @@ module "worker" {
   ubuntu_image_base_volume_id = libvirt_volume.ubuntu_base.id
   vm                          = var.worker_vm
   network_id                  = libvirt_network.rke2_net.id
-  storage_pool                = var.storage_pool
+  storage_pool                = local.storage_pool_name
   user_data                   = templatefile("${path.module}/cloud_init.cfg", { hostname = each.key, ansible_user = var.ansible_user, ssh_public_key = var.ssh_public_key })
   network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = each.value.ip, network_gateway = var.network_gateway })
 }
@@ -126,6 +132,7 @@ module "worker" {
 # Generate Ansible inventory from infrastructure
 locals {
   ansible_inventory = templatefile("${path.module}/inventory.tpl", {
+    environment                  = var.environment
     ansible_user                 = var.ansible_user
     ansible_ssh_private_key_file = var.ansible_ssh_private_key_file
     control_plane_nodes          = module.control_plane

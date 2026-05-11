@@ -20,7 +20,7 @@ output "worker_nodes" {
 
 output "ansible_inventory_path" {
   description = "Path to generated Ansible inventory file"
-  value       = "ansible/inventory/hosts.ini.generated"
+  value       = "ansible/inventory/${var.environment}.ini"
 }
 
 output "ansible_inventory" {
