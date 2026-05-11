@@ -314,6 +314,8 @@ Point the dashboard hostname at an ingress node IP with DNS or `/etc/hosts`, the
 https://dashboard.rke2.local/
 ```
 
+The ingress controller binds host ports 80 and 443 on the node running ingress-nginx, so no NodePort suffix is required.
+
 Get the login token:
 
 ```bash

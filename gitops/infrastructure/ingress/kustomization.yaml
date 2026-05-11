@@ -4,3 +4,4 @@ resources:
   - https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.3/deploy/static/provider/baremetal/deploy.yaml
 patches:
   - path: resources.yaml
+  - path: host-network.yaml
