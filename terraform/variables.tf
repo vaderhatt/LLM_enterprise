@@ -86,3 +86,9 @@ variable "ansible_user" {
   type        = string
   default     = "ansible"
 }
+
+variable "ansible_ssh_private_key_file" {
+  description = "Path to the SSH private key for the ansible user"
+  type        = string
+  default     = "~/.ssh/id_ed25519"
+}
