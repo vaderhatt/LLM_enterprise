@@ -6,6 +6,10 @@ terraform {
       source  = "dmacvicar/libvirt"
       version = "0.7.6"
     }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
   }
 }
 
@@ -20,11 +24,11 @@ resource "libvirt_pool" "rke2" {
 }
 
 resource "libvirt_volume" "ubuntu_base" {
-  name           = "ubuntu-base.qcow2"
-  pool           = libvirt_pool.rke2.name
-  source         = var.ubuntu_image_path
-  format         = "qcow2"
-  
+  name   = "ubuntu-base.qcow2"
+  pool   = libvirt_pool.rke2.name
+  source = var.ubuntu_image_path
+  format = "qcow2"
+
   depends_on = [libvirt_pool.rke2]
 }
 
@@ -68,7 +72,7 @@ module "control_plane" {
   vm                          = var.control_plane_vm
   network_id                  = libvirt_network.rke2_net.id
   storage_pool                = var.storage_pool
-  user_data                   = templatefile("${path.module}/cloud_init.cfg", { hostname = each.key })
+  user_data                   = templatefile("${path.module}/cloud_init.cfg", { hostname = each.key, ansible_user = var.ansible_user, ssh_public_key = var.ssh_public_key })
   network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = each.value.ip, network_gateway = var.network_gateway })
 }
 
@@ -82,6 +86,6 @@ module "worker" {
   vm                          = var.worker_vm
   network_id                  = libvirt_network.rke2_net.id
   storage_pool                = var.storage_pool
-  user_data                   = templatefile("${path.module}/cloud_init.cfg", { hostname = each.key })
+  user_data                   = templatefile("${path.module}/cloud_init.cfg", { hostname = each.key, ansible_user = var.ansible_user, ssh_public_key = var.ssh_public_key })
   network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = each.value.ip, network_gateway = var.network_gateway })
 }

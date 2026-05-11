@@ -2,3 +2,6 @@ terraform/.terraform/
 terraform/schema.json
 .terragrunt-cache/
 live/**/*.tfstate
+live/**/*.tfstate.backup
+ansible/inventory/hosts.ini.generated
+terraform/.terraform.lock.hcl

@@ -73,3 +73,16 @@ variable "worker_ips" {
   type        = list(string)
   default     = ["10.10.1.21", "10.10.1.22", "10.10.1.23"]
 }
+
+variable "ssh_public_key" {
+  description = "SSH public key for the ansible user (ed25519 format)"
+  type        = string
+  sensitive   = true
+  default     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJuWkPR+Y0sH478sr0MqR3AhSVohoYQLvOsehR0VELxq admin@w237.net"
+}
+
+variable "ansible_user" {
+  description = "Username for Ansible SSH access"
+  type        = string
+  default     = "ansible"
+}
