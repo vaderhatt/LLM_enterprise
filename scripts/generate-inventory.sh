@@ -17,12 +17,21 @@ all_inventory_path="$inventory_dir/all.ini"
 
 mkdir -p "$(dirname "$inventory_path")"
 
+normalize_host_vars() {
+    local path="$1"
+
+    sed -i \
+        -e 's/[[:space:]]ansible_user=[^[:space:]]*//g' \
+        -e 's/[[:space:]]ansible_ssh_private_key_file=[^[:space:]]*//g' \
+        "$path"
+}
+
 (
     cd "$live_env_dir"
     terragrunt output -raw ansible_inventory
 ) > "$inventory_path"
 
-sed -i "s|ansible_ssh_private_key_file=[^[:space:]]*|ansible_ssh_private_key_file=.ssh/id_ed25519|g" "$inventory_path"
+normalize_host_vars "$inventory_path"
 sed -i "/^ansible_ssh_common_args=/d" "$inventory_path"
 printf "ansible_ssh_common_args='-o UserKnownHostsFile=.ssh/known_hosts -o StrictHostKeyChecking=yes'\n" >> "$inventory_path"
 
@@ -34,14 +43,56 @@ echo "Generated Ansible inventory: $inventory_path"
     for env in dev stage prod; do
         env_inventory_path="$inventory_dir/$env.ini"
         if [[ -f "$env_inventory_path" ]]; then
-            printf '\n# %s\n' "$env_inventory_path"
-            awk '
-                /^\[all:vars\]$/ { skip = 1; next }
-                skip && /^\[/ { skip = 0 }
-                !skip { print }
+            normalize_host_vars "$env_inventory_path"
+
+            printf '\n[%s_controlplane]\n' "$env"
+            awk -v section="[${env}_controlplane]" '
+                $0 == section { in_section = 1; next }
+                in_section && /^\[/ { in_section = 0 }
+                in_section && NF { print }
+            ' "$env_inventory_path"
+
+            printf '\n[%s_worker]\n' "$env"
+            awk -v section="[${env}_worker]" '
+                $0 == section { in_section = 1; next }
+                in_section && /^\[/ { in_section = 0 }
+                in_section && NF { print }
             ' "$env_inventory_path"
         fi
     done
+
+    printf '\n[all:children]\n'
+    for env in dev stage prod; do
+        [[ -f "$inventory_dir/$env.ini" ]] && printf '%s\n' "$env"
+    done
+
+    for env in dev stage prod; do
+        if [[ -f "$inventory_dir/$env.ini" ]]; then
+            printf '\n[%s:children]\n' "$env"
+            printf '%s_controlplane\n' "$env"
+            printf '%s_worker\n' "$env"
+        fi
+    done
+
+    printf '\n[controlplane:children]\n'
+    for env in dev stage prod; do
+        [[ -f "$inventory_dir/$env.ini" ]] && printf '%s_controlplane\n' "$env"
+    done
+
+    printf '\n[worker:children]\n'
+    for env in dev stage prod; do
+        [[ -f "$inventory_dir/$env.ini" ]] && printf '%s_worker\n' "$env"
+    done
+
+    printf '\n[rke2_servers:children]\n'
+    printf 'controlplane\n'
+
+    printf '\n[rke2_agents:children]\n'
+    printf 'worker\n'
+
+    printf '\n[rke2_cluster:children]\n'
+    printf 'rke2_servers\n'
+    printf 'rke2_agents\n'
 
     printf '\n[all:vars]\n'
     printf 'ansible_python_interpreter=/usr/bin/python3\n'

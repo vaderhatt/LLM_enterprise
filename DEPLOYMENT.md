@@ -58,8 +58,8 @@ This creates:
 - 3 control-plane VMs (cp1, cp2, cp3) at 10.10.1.11-13
 - 3 worker VMs (worker1, worker2, worker3) at 10.10.1.21-23
 - Libvirt network `dev-rke2-net`
-- Libvirt storage pool `rke2-storage`
-- VM disks and cloud-init ISOs under the environment's `data_dir` input
+- Libvirt storage pool `dev-rke2-storage`
+- VM disks and cloud-init ISOs under the shared `data_dir` input from [live/root.hcl](live/root.hcl)
 - Cloud-init configurations with SSH keys for the `ansible` user
 
 **Generated files:**
@@ -109,6 +109,12 @@ ansible/.ssh/known_hosts
 
 These files are generated runtime artifacts and are ignored by git. `deploy.sh` copies the private/public key from `${HOME}/.ssh/id_ed25519*` by default, fixes permissions, exports the public key to Terraform for cloud-init, and rewrites the generated inventory to use paths relative to the Ansible project directory. Set `ANSIBLE_KEY_SOURCE` before running the script to use a different local source key.
 
+Direct Terragrunt runs read the cloud-init public key from `ansible/.ssh/id_ed25519.pub` by default. Set `SSH_PUBLIC_KEY_FILE` to use a different public key file:
+
+```bash
+SSH_PUBLIC_KEY_FILE=/path/to/id_ed25519.pub terragrunt plan
+```
+
 The related Terraform variables are defined in [terraform/variables.tf](terraform/variables.tf):
 
 ```hcl
@@ -121,14 +127,14 @@ variable "ssh_public_key" {
   description = "SSH public key for the ansible user (ed25519 format)"
   type        = string
   sensitive   = true
-  default     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJuWkPR+Y0sH478sr0MqR3AhSVohoYQLvOsehR0VELxq admin@w237.net"
 }
+```
 
-variable "ansible_ssh_private_key_file" {
-  description = "Path to the SSH private key for the ansible user"
-  type        = string
-  default     = ".ssh/id_ed25519"
-}
+Ansible connection defaults live in [ansible/ansible.cfg](ansible/ansible.cfg):
+
+```ini
+remote_user = ansible
+private_key_file = .ssh/id_ed25519
 ```
 
 **To use a different source key:**
@@ -147,43 +153,34 @@ The generated Ansible inventory will reference `.ssh/id_ed25519` and `.ssh/known
 
 ### Network Configuration
 
-Edit [terraform/variables.tf](terraform/variables.tf):
+Edit the target environment file, for example [live/dev/terragrunt.hcl](live/dev/terragrunt.hcl):
 
 ```hcl
-variable "network_cidr" {
-  default = "10.10.1.0/24"
-}
-
-variable "control_plane_ips" {
-  default = ["10.10.1.11", "10.10.1.12", "10.10.1.13"]
-}
-
-variable "worker_ips" {
-  default = ["10.10.1.21", "10.10.1.22", "10.10.1.23"]
-}
+network_cidr     = "10.10.1.0/24"
+network_gateway  = "10.10.1.1"
+control_plane_ips = ["10.10.1.11", "10.10.1.12", "10.10.1.13"]
+worker_ips        = ["10.10.1.21", "10.10.1.22", "10.10.1.23"]
 ```
 
 ### VM Sizing
 
-Edit [terraform/variables.tf](terraform/variables.tf):
+Shared VM sizing defaults are defined in [live/root.hcl](live/root.hcl):
 
 ```hcl
-variable "control_plane_vm" {
-  default = {
-    cpus         = 2
-    memory_mib   = 4096
-    disk_size_gb = 20
-  }
+control_plane_vm = {
+  cpus         = 2
+  memory_mib   = 4096
+  disk_size_gb = 50
 }
 
-variable "worker_vm" {
-  default = {
-    cpus         = 2
-    memory_mib   = 2048
-    disk_size_gb = 10
-  }
+worker_vm = {
+  cpus         = 2
+  memory_mib   = 16536
+  disk_size_gb = 50
 }
 ```
+
+Override these in an environment `terragrunt.hcl` only when that environment needs different sizing.
 
 ## Generated Files
 
@@ -193,11 +190,13 @@ After `deploy.sh` runs, the following files are generated from Terragrunt output
 ansible/inventory/dev.ini
 ansible/inventory/stage.ini
 ansible/inventory/prod.ini
+ansible/inventory/all.ini
 ```
 
-The environment inventory content is rendered by Terraform from [terraform/inventory.tpl](terraform/inventory.tpl), exposed through `terragrunt output -raw ansible_inventory`, and written by `deploy.sh` to `ansible/inventory/<env>.ini`. It contains:
-- Control plane nodes in `[controlplane]` group
-- Worker nodes in `[worker]` group
+The environment inventory content is rendered by Terraform from [terraform/inventory.tpl](terraform/inventory.tpl), exposed through `terragrunt output -raw ansible_inventory`, and written to `ansible/inventory/<env>.ini`. `ansible/inventory/all.ini` is generated from all available environment inventories. It contains:
+- Environment-specific control plane groups such as `[dev_controlplane]`
+- Environment-specific worker groups such as `[dev_worker]`
+- Aggregate `[controlplane]` and `[worker]` groups in `all.ini`
 - RKE2 role groups in `[rke2_servers]`, `[rke2_agents]`, and `[rke2_cluster]`
 - SSH connection parameters for each node
 
@@ -233,7 +232,7 @@ If `terragrunt apply` fails with storage pool error:
 Error: can't find storage pool 'rke2-storage'
 ```
 
-The [libvirt_pool resource](terraform/main.tf) is automatically created. Ensure libvirt is installed:
+The [libvirt_pool resource](terraform/main.tf) is automatically created with an environment prefix, such as `dev-rke2-storage`. Ensure libvirt is installed:
 
 ```bash
 sudo apt-get install libvirt-bin
@@ -265,14 +264,15 @@ LLM_enterprise/
 │   │   ├── prerequisites.yml    # OS preparation
 │   │   └── deploy-rke2.yml      # RKE2 deployment
 │   ├── inventory/
-│   │   ├── hosts.ini            # Manual inventory (reference)
 │   │   ├── dev.ini              # Generated dev inventory
 │   │   ├── stage.ini            # Generated stage inventory
-│   │   └── prod.ini             # Generated prod inventory
+│   │   ├── prod.ini             # Generated prod inventory
+│   │   └── all.ini              # Generated aggregate inventory
 │   └── roles/
 │       └── rke2-ansible/        # RKE2 Ansible role
 ├── deploy.sh                    # Automated deployment script
 └── live/
+  ├── root.hcl                 # Shared Terragrunt state configuration
     └── dev/                     # Terragrunt environment
         ├── terragrunt.hcl
         └── terraform.tfstate

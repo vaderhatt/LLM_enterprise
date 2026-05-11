@@ -132,10 +132,8 @@ module "worker" {
 # Generate Ansible inventory from infrastructure
 locals {
   ansible_inventory = templatefile("${path.module}/inventory.tpl", {
-    environment                  = var.environment
-    ansible_user                 = var.ansible_user
-    ansible_ssh_private_key_file = var.ansible_ssh_private_key_file
-    control_plane_nodes          = module.control_plane
-    worker_nodes                 = module.worker
+    environment         = var.environment
+    control_plane_nodes = module.control_plane
+    worker_nodes        = module.worker
   })
 }

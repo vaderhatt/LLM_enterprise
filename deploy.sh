@@ -15,7 +15,6 @@ ANSIBLE_KEY_SOURCE="${ANSIBLE_KEY_SOURCE:-$HOME/.ssh/id_ed25519}"
 ANSIBLE_KEY_PATH="$ANSIBLE_KEY_DIR/id_ed25519"
 ANSIBLE_PUBLIC_KEY_PATH="$ANSIBLE_KEY_PATH.pub"
 ANSIBLE_KNOWN_HOSTS_PATH="$ANSIBLE_KEY_DIR/known_hosts"
-ANSIBLE_INVENTORY_KEY_PATH=".ssh/id_ed25519"
 ANSIBLE_INVENTORY_KNOWN_HOSTS_PATH=".ssh/known_hosts"
 ANSIBLE_INVENTORY="inventory/$DEPLOY_ENV.ini"
 
@@ -109,7 +108,6 @@ terraform_apply() {
 configure_inventory_ssh_paths() {
     local inventory_path="$1"
 
-    sed -i "s|ansible_ssh_private_key_file=[^[:space:]]*|ansible_ssh_private_key_file=$ANSIBLE_INVENTORY_KEY_PATH|g" "$inventory_path"
     sed -i "/^ansible_ssh_common_args=/d" "$inventory_path"
     printf "ansible_ssh_common_args='-o UserKnownHostsFile=%s -o StrictHostKeyChecking=yes'\n" "$ANSIBLE_INVENTORY_KNOWN_HOSTS_PATH" >> "$inventory_path"
 }
