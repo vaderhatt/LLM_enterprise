@@ -62,12 +62,25 @@ generate_inventory() {
     cd "$LIVE_DEV_DIR"
     
     INVENTORY_PATH="$ANSIBLE_DIR/inventory/hosts.ini.generated"
+    
+    # Check if inventory exists in the expected location
     if [ -f "$INVENTORY_PATH" ]; then
         log_success "Inventory generated at: $INVENTORY_PATH"
-    else
-        log_warn "Inventory file not found at: $INVENTORY_PATH"
-        return 1
+        return 0
     fi
+    
+    # If not found, check in Terragrunt cache and copy it
+    CACHE_INVENTORY=$(find .terragrunt-cache -name "hosts.ini.generated" -type f 2>/dev/null | head -1)
+    if [ -n "$CACHE_INVENTORY" ] && [ -f "$CACHE_INVENTORY" ]; then
+        log_info "Found inventory in cache, copying to expected location..."
+        mkdir -p "$(dirname "$INVENTORY_PATH")"
+        cp "$CACHE_INVENTORY" "$INVENTORY_PATH"
+        log_success "Inventory copied to: $INVENTORY_PATH"
+        return 0
+    fi
+    
+    log_warn "Inventory file not found at: $INVENTORY_PATH or in cache"
+    return 1
 }
 
 # Wait for VMs to be ready

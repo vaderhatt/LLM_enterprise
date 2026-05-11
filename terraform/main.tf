@@ -89,3 +89,19 @@ module "worker" {
   user_data                   = templatefile("${path.module}/cloud_init.cfg", { hostname = each.key, ansible_user = var.ansible_user, ssh_public_key = var.ssh_public_key })
   network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = each.value.ip, network_gateway = var.network_gateway })
 }
+
+# Generate Ansible inventory from infrastructure
+locals {
+  ansible_inventory = templatefile("${path.module}/inventory.tpl", {
+    ansible_user             = var.ansible_user
+    control_plane_nodes      = module.control_plane
+    worker_nodes             = module.worker
+  })
+}
+
+resource "local_file" "ansible_inventory" {
+  filename = "${path.module}/../ansible/inventory/hosts.ini.generated"
+  content  = local.ansible_inventory
+
+  file_permission = "0644"
+}
