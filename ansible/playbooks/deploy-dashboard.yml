@@ -1,0 +1,195 @@
+---
+- name: Deploy Kubernetes Dashboard on RKE2
+  hosts: rke2_servers
+  become: true
+  gather_facts: false
+  vars:
+    kubeconfig_path: /etc/rancher/rke2/rke2.yaml
+    kubectl_path: /var/lib/rancher/rke2/bin/kubectl
+    dashboard_manifest_url: https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
+    ingress_nginx_manifest_url: https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.3/deploy/static/provider/baremetal/deploy.yaml
+    dashboard_namespace: kubernetes-dashboard
+    dashboard_admin_manifest: /tmp/kubernetes-dashboard-admin.yml
+    dashboard_ingress_manifest: /tmp/kubernetes-dashboard-ingress.yml
+    dashboard_tls_dir: /tmp/kubernetes-dashboard-tls
+    dashboard_ingress_class: nginx
+    dashboard_install_ingress_controller: true
+    dashboard_create_admin_user: true
+    dashboard_environment: "{{ inventory_hostname.split('-')[0] }}"
+    dashboard_host: "dashboard.{{ dashboard_environment }}.rke2.local"
+    dashboard_tls_secret: kubernetes-dashboard-tls
+
+  tasks:
+    - name: Run dashboard deployment only once
+      ansible.builtin.meta: end_host
+      when: inventory_hostname != groups['rke2_servers'][0]
+
+    - name: Check kubectl exists
+      ansible.builtin.stat:
+        path: "{{ kubectl_path }}"
+      register: kubectl_binary
+
+    - name: Fail when kubectl is missing
+      ansible.builtin.fail:
+        msg: "kubectl not found at {{ kubectl_path }}. Deploy RKE2 before installing the dashboard."
+      when: not kubectl_binary.stat.exists
+
+    - name: Wait for Kubernetes API
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} get nodes"
+      register: kubectl_nodes
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: kubectl_nodes.rc == 0
+
+    - name: Check for ingress class
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} get ingressclass {{ dashboard_ingress_class }}"
+      register: ingress_class_check
+      failed_when: false
+      changed_when: false
+
+    - name: Install ingress-nginx when ingress class is absent
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} apply -f {{ ingress_nginx_manifest_url }}"
+      register: ingress_nginx_apply
+      changed_when: "'created' in ingress_nginx_apply.stdout or 'configured' in ingress_nginx_apply.stdout"
+      when:
+        - dashboard_install_ingress_controller | bool
+        - ingress_class_check.rc != 0
+
+    - name: Wait for ingress-nginx controller when installed
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=180s"
+      changed_when: false
+      when:
+        - dashboard_install_ingress_controller | bool
+        - ingress_class_check.rc != 0
+
+    - name: Apply Kubernetes Dashboard manifest
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} apply -f {{ dashboard_manifest_url }}"
+      register: dashboard_apply
+      changed_when: "'created' in dashboard_apply.stdout or 'configured' in dashboard_apply.stdout"
+
+    - name: Write dashboard admin manifest
+      ansible.builtin.copy:
+        dest: "{{ dashboard_admin_manifest }}"
+        mode: "0600"
+        content: |
+          ---
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: admin-user
+            namespace: {{ dashboard_namespace }}
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: admin-user
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: cluster-admin
+          subjects:
+            - kind: ServiceAccount
+              name: admin-user
+              namespace: {{ dashboard_namespace }}
+          ---
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: admin-user
+            namespace: {{ dashboard_namespace }}
+            annotations:
+              kubernetes.io/service-account.name: admin-user
+          type: kubernetes.io/service-account-token
+      when: dashboard_create_admin_user | bool
+
+    - name: Apply dashboard admin manifest
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} apply -f {{ dashboard_admin_manifest }}"
+      register: dashboard_admin_apply
+      changed_when: "'created' in dashboard_admin_apply.stdout or 'configured' in dashboard_admin_apply.stdout"
+      when: dashboard_create_admin_user | bool
+
+    - name: Wait for dashboard deployment
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} -n {{ dashboard_namespace }} rollout status deployment/kubernetes-dashboard --timeout=180s"
+      changed_when: false
+
+    - name: Create temporary TLS directory
+      ansible.builtin.file:
+        path: "{{ dashboard_tls_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Generate dashboard self-signed TLS certificate
+      ansible.builtin.command:
+        cmd: >-
+          openssl req -x509 -nodes -days 3650 -newkey rsa:4096
+          -keyout {{ dashboard_tls_dir }}/tls.key
+          -out {{ dashboard_tls_dir }}/tls.crt
+          -subj /CN={{ dashboard_host }}
+          -addext subjectAltName=DNS:{{ dashboard_host }}
+      args:
+        creates: "{{ dashboard_tls_dir }}/tls.crt"
+
+    - name: Apply dashboard TLS secret
+      ansible.builtin.shell:
+        cmd: >-
+          {{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} -n {{ dashboard_namespace }}
+          create secret tls {{ dashboard_tls_secret }}
+          --cert={{ dashboard_tls_dir }}/tls.crt
+          --key={{ dashboard_tls_dir }}/tls.key
+          --dry-run=client -o yaml |
+          {{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} apply -f -
+      register: dashboard_tls_apply
+      changed_when: "'created' in dashboard_tls_apply.stdout or 'configured' in dashboard_tls_apply.stdout"
+
+    - name: Write dashboard ingress manifest
+      ansible.builtin.copy:
+        dest: "{{ dashboard_ingress_manifest }}"
+        mode: "0600"
+        content: |
+          ---
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: kubernetes-dashboard
+            namespace: {{ dashboard_namespace }}
+            annotations:
+              nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+              nginx.ingress.kubernetes.io/ssl-redirect: "true"
+          spec:
+            ingressClassName: {{ dashboard_ingress_class }}
+            tls:
+              - hosts:
+                  - {{ dashboard_host }}
+                secretName: {{ dashboard_tls_secret }}
+            rules:
+              - host: {{ dashboard_host }}
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: kubernetes-dashboard
+                          port:
+                            number: 443
+
+    - name: Apply dashboard ingress manifest
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} apply -f {{ dashboard_ingress_manifest }}"
+      register: dashboard_ingress_apply
+      changed_when: "'created' in dashboard_ingress_apply.stdout or 'configured' in dashboard_ingress_apply.stdout"
+
+    - name: Show access commands
+      ansible.builtin.debug:
+        msg:
+          - "Dashboard host: https://{{ dashboard_host }}/"
+          - "Add an /etc/hosts or DNS record for {{ dashboard_host }} pointing to an ingress node IP."
+          - "Token command: kubectl -n {{ dashboard_namespace }} get secret admin-user -o jsonpath='{.data.token}' | base64 -d"

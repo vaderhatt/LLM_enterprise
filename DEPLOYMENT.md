@@ -93,6 +93,9 @@ ansible-playbook playbooks/prerequisites.yml -i inventory/dev.ini -b
 
 # 2. Deploy RKE2
 ansible-playbook playbooks/deploy-rke2.yml -i inventory/dev.ini -b
+
+# 3. Optional: deploy Kubernetes Dashboard
+ansible-playbook playbooks/deploy-dashboard.yml -i inventory/dev.ini
 ```
 
 ## Configuration
@@ -247,6 +250,35 @@ Check prerequisites playbook logs:
 ansible-playbook playbooks/prerequisites.yml -i inventory/dev.ini -b -vvv
 ```
 
+### Kubernetes Dashboard
+
+Deploy the dashboard after RKE2 is running:
+
+```bash
+cd ansible
+ansible-playbook playbooks/deploy-dashboard.yml -i inventory/dev.ini
+```
+
+The playbook installs the upstream Kubernetes Dashboard manifest on the first RKE2 server, ensures an `nginx` ingress class exists, creates a TLS-backed Dashboard ingress, and creates an `admin-user` service account token. By default the dashboard host is `dashboard.<env>.rke2.local`, for example `dashboard.dev.rke2.local`.
+
+Point the dashboard hostname at an ingress node IP with DNS or `/etc/hosts`, then open:
+
+```text
+https://dashboard.dev.rke2.local/
+```
+
+Override the host when needed:
+
+```bash
+ansible-playbook playbooks/deploy-dashboard.yml -i inventory/dev.ini -e dashboard_host=dashboard.example.com
+```
+
+Get the login token:
+
+```bash
+kubectl -n kubernetes-dashboard get secret admin-user -o jsonpath='{.data.token}' | base64 -d
+```
+
 ## File Structure
 
 ```
@@ -262,7 +294,8 @@ LLM_enterprise/
 ├── ansible/
 │   ├── playbooks/
 │   │   ├── prerequisites.yml    # OS preparation
-│   │   └── deploy-rke2.yml      # RKE2 deployment
+│   │   ├── deploy-rke2.yml      # RKE2 deployment
+│   │   └── deploy-dashboard.yml # Optional Kubernetes Dashboard
 │   ├── inventory/
 │   │   ├── dev.ini              # Generated dev inventory
 │   │   ├── stage.ini            # Generated stage inventory
