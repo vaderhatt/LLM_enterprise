@@ -44,8 +44,9 @@ The hosts are QEMU/KVM headless VMs running on a single Gentoo physical machine.
 2. IPs are automatically configured on VMs via Terraform and cloud-init (10.10.1.0/24 network).
 3. Run prerequisites: `cd ansible && ansible-playbook -i inventory/dev.ini playbooks/prerequisites.yml -b`
 4. Deploy RKE2: `cd ansible && ansible-playbook -i inventory/dev.ini playbooks/deploy-rke2.yml -b`
-5. Optionally deploy Kubernetes Dashboard with ingress: `cd ansible && ansible-playbook -i inventory/dev.ini playbooks/deploy-dashboard.yml`
-6. Retrieve kubeconfig from `./kubeconfig` and use `kubectl` to manage the cluster.
+5. Bootstrap Flux GitOps: `cd ansible && ansible-playbook -i inventory/dev.ini playbooks/bootstrap-flux.yml`
+6. Optionally deploy Kubernetes Dashboard with ingress: `cd ansible && ansible-playbook -i inventory/dev.ini playbooks/deploy-dashboard.yml`
+7. Retrieve kubeconfig from `./kubeconfig` and use `kubectl` to manage the cluster.
 
 ## Notes
 

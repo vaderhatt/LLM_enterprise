@@ -68,7 +68,7 @@ This creates:
 #### Step 2: Verify VM Connectivity
 
 ```bash
-# From the project root
+# From the platform directory
 cd ansible
 
 # Test SSH connectivity to all nodes
@@ -94,7 +94,10 @@ ansible-playbook playbooks/prerequisites.yml -i inventory/dev.ini -b
 # 2. Deploy RKE2
 ansible-playbook playbooks/deploy-rke2.yml -i inventory/dev.ini -b
 
-# 3. Optional: deploy Kubernetes Dashboard
+# 3. Bootstrap Flux GitOps
+ansible-playbook playbooks/bootstrap-flux.yml -i inventory/dev.ini
+
+# 4. Optional: deploy Kubernetes Dashboard
 ansible-playbook playbooks/deploy-dashboard.yml -i inventory/dev.ini
 ```
 
@@ -250,16 +253,46 @@ Check prerequisites playbook logs:
 ansible-playbook playbooks/prerequisites.yml -i inventory/dev.ini -b -vvv
 ```
 
+### Flux GitOps Bootstrap
+
+Bootstrap Flux after RKE2 is running:
+
+```bash
+cd platform/ansible
+ansible-playbook playbooks/bootstrap-flux.yml -i inventory/dev.ini
+```
+
+By default, Flux watches this repository on branch `main` and applies the matching environment path, such as [../../gitops/clusters/dev](../../gitops/clusters/dev) for the dev inventory. Override the source for forks, private mirrors, or a different environment path:
+
+```bash
+ansible-playbook playbooks/bootstrap-flux.yml -i inventory/dev.ini \
+   -e flux_git_url=https://github.com/example/LLM_enterprise.git \
+   -e flux_git_branch=main \
+   -e flux_git_path=./gitops/clusters/dev
+```
+
+Check reconciliation:
+
+```bash
+kubectl -n flux-system get gitrepositories,kustomizations
+```
+
 ### Kubernetes Dashboard
 
 Deploy the dashboard after RKE2 is running:
 
 ```bash
-cd ansible
+cd platform/ansible
 ansible-playbook playbooks/deploy-dashboard.yml -i inventory/dev.ini
 ```
 
-The playbook installs the upstream Kubernetes Dashboard manifest on the first RKE2 server, ensures an `nginx` ingress class exists, creates a TLS-backed Dashboard ingress, and creates an `admin-user` service account token. By default the dashboard host is `dashboard.<env>.rke2.local`, for example `dashboard.dev.rke2.local`.
+The playbook installs the upstream Kubernetes Dashboard manifest on the first RKE2 server, creates a TLS-backed Dashboard ingress, and creates an `admin-user` service account token. It expects the `nginx` ingress class from [../gitops/infrastructure/ingress](../gitops/infrastructure/ingress) to already exist. By default the dashboard host is `dashboard.<env>.rke2.local`, for example `dashboard.dev.rke2.local`.
+
+Install ingress first through GitOps or manually while bootstrapping:
+
+```bash
+kubectl apply -k ../gitops/infrastructure/ingress
+```
 
 Point the dashboard hostname at an ingress node IP with DNS or `/etc/hosts`, then open:
 

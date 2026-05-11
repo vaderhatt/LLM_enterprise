@@ -1,0 +1,111 @@
+---
+- name: Bootstrap Flux GitOps on RKE2
+  hosts: rke2_servers
+  become: true
+  gather_facts: false
+  vars:
+    kubeconfig_path: /etc/rancher/rke2/rke2.yaml
+    kubectl_path: /var/lib/rancher/rke2/bin/kubectl
+    flux_namespace: flux-system
+    flux_install_manifest_url: https://github.com/fluxcd/flux2/releases/download/v2.4.0/install.yaml
+    flux_git_url: https://github.com/vaderhatt/LLM_enterprise.git
+    flux_git_branch: main
+    flux_environment: "{{ inventory_hostname.split('-')[0] }}"
+    flux_git_path: "./gitops/clusters/{{ flux_environment }}"
+    flux_sync_manifest: /tmp/flux-system-sync.yml
+    flux_interval: 1m
+    flux_timeout: 5m
+
+  tasks:
+    - name: Run Flux bootstrap only once
+      ansible.builtin.meta: end_host
+      when: inventory_hostname != groups['rke2_servers'][0]
+
+    - name: Check kubectl exists
+      ansible.builtin.stat:
+        path: "{{ kubectl_path }}"
+      register: kubectl_binary
+
+    - name: Fail when kubectl is missing
+      ansible.builtin.fail:
+        msg: "kubectl not found at {{ kubectl_path }}. Deploy RKE2 before bootstrapping Flux."
+      when: not kubectl_binary.stat.exists
+
+    - name: Wait for Kubernetes API
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} get nodes"
+      register: kubectl_nodes
+      changed_when: false
+      retries: 30
+      delay: 10
+      until: kubectl_nodes.rc == 0
+
+    - name: Install Flux controllers
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} apply -f {{ flux_install_manifest_url }}"
+      register: flux_install
+      changed_when: "'created' in flux_install.stdout or 'configured' in flux_install.stdout"
+
+    - name: Wait for Flux controller deployments
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} -n {{ flux_namespace }} rollout status deployment/{{ item }} --timeout=180s"
+      changed_when: false
+      loop:
+        - source-controller
+        - kustomize-controller
+        - helm-controller
+        - notification-controller
+
+    - name: Write Flux sync manifest
+      ansible.builtin.copy:
+        dest: "{{ flux_sync_manifest }}"
+        mode: "0600"
+        content: |
+          ---
+          apiVersion: source.toolkit.fluxcd.io/v1
+          kind: GitRepository
+          metadata:
+            name: flux-system
+            namespace: {{ flux_namespace }}
+          spec:
+            interval: {{ flux_interval }}
+            ref:
+              branch: {{ flux_git_branch }}
+            url: {{ flux_git_url }}
+          ---
+          apiVersion: kustomize.toolkit.fluxcd.io/v1
+          kind: Kustomization
+          metadata:
+            name: flux-system
+            namespace: {{ flux_namespace }}
+          spec:
+            interval: {{ flux_interval }}
+            path: {{ flux_git_path }}
+            prune: true
+            sourceRef:
+              kind: GitRepository
+              name: flux-system
+            timeout: {{ flux_timeout }}
+            wait: true
+
+    - name: Apply Flux sync manifest
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} apply -f {{ flux_sync_manifest }}"
+      register: flux_sync_apply
+      changed_when: "'created' in flux_sync_apply.stdout or 'configured' in flux_sync_apply.stdout"
+
+    - name: Wait for Flux GitRepository reconciliation
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} -n {{ flux_namespace }} wait gitrepository/flux-system --for=condition=Ready --timeout=180s"
+      changed_when: false
+
+    - name: Wait for Flux Kustomization reconciliation
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} -n {{ flux_namespace }} wait kustomization/flux-system --for=condition=Ready --timeout=300s"
+      changed_when: false
+
+    - name: Show Flux status commands
+      ansible.builtin.debug:
+        msg:
+          - "Flux is syncing {{ flux_git_url }} branch {{ flux_git_branch }} path {{ flux_git_path }}."
+          - "Status: kubectl -n {{ flux_namespace }} get gitrepositories,kustomizations"

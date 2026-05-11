@@ -7,13 +7,11 @@
     kubeconfig_path: /etc/rancher/rke2/rke2.yaml
     kubectl_path: /var/lib/rancher/rke2/bin/kubectl
     dashboard_manifest_url: https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
-    ingress_nginx_manifest_url: https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.3/deploy/static/provider/baremetal/deploy.yaml
     dashboard_namespace: kubernetes-dashboard
     dashboard_admin_manifest: /tmp/kubernetes-dashboard-admin.yml
     dashboard_ingress_manifest: /tmp/kubernetes-dashboard-ingress.yml
     dashboard_tls_dir: /tmp/kubernetes-dashboard-tls
     dashboard_ingress_class: nginx
-    dashboard_install_ingress_controller: true
     dashboard_create_admin_user: true
     dashboard_environment: "{{ inventory_hostname.split('-')[0] }}"
     dashboard_host: "dashboard.{{ dashboard_environment }}.rke2.local"
@@ -50,22 +48,12 @@
       failed_when: false
       changed_when: false
 
-    - name: Install ingress-nginx when ingress class is absent
-      ansible.builtin.command:
-        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} apply -f {{ ingress_nginx_manifest_url }}"
-      register: ingress_nginx_apply
-      changed_when: "'created' in ingress_nginx_apply.stdout or 'configured' in ingress_nginx_apply.stdout"
-      when:
-        - dashboard_install_ingress_controller | bool
-        - ingress_class_check.rc != 0
-
-    - name: Wait for ingress-nginx controller when installed
-      ansible.builtin.command:
-        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=180s"
-      changed_when: false
-      when:
-        - dashboard_install_ingress_controller | bool
-        - ingress_class_check.rc != 0
+    - name: Fail when ingress class is missing
+      ansible.builtin.fail:
+        msg: >-
+          IngressClass {{ dashboard_ingress_class }} was not found. Apply
+          gitops/infrastructure/ingress before deploying the dashboard.
+      when: ingress_class_check.rc != 0
 
     - name: Apply Kubernetes Dashboard manifest
       ansible.builtin.command:
