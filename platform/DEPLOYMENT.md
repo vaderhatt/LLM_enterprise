@@ -85,7 +85,7 @@ cp2 | SUCCESS => {"ansible_facts": {...}, "changed": false, "ping": "pong"}
 #### Step 3: Run Ansible Playbooks
 
 ```bash
-# From the project root
+# From the platform directory
 cd ansible
 
 # 1. Prepare the OS on all nodes
@@ -110,7 +110,7 @@ ansible/.ssh/id_ed25519.pub
 ansible/.ssh/known_hosts
 ```
 
-These files are generated runtime artifacts and are ignored by git. `deploy.sh` copies the private/public key from `${HOME}/.ssh/id_ed25519*` by default, fixes permissions, exports the public key to Terraform for cloud-init, and rewrites the generated inventory to use paths relative to the Ansible project directory. Set `ANSIBLE_KEY_SOURCE` before running the script to use a different local source key.
+These files are generated runtime artifacts and are ignored by git. `deploy.sh` copies the private/public key from `${HOME}/.ssh/id_ed25519*` by default, fixes permissions, and exports the public key to Terraform for cloud-init. Set `ANSIBLE_KEY_SOURCE` before running the script to use a different local source key.
 
 Direct Terragrunt runs read the cloud-init public key from `ansible/.ssh/id_ed25519.pub` by default. Set `SSH_PUBLIC_KEY_FILE` to use a different public key file:
 
@@ -152,7 +152,7 @@ private_key_file = .ssh/id_ed25519
   ./deploy.sh
    ```
 
-The generated Ansible inventory will reference `.ssh/id_ed25519` and `.ssh/known_hosts` relative to `ansible/`, so stale entries in the caller's global `~/.ssh/known_hosts` do not break redeployments.
+Ansible uses `remote_user`, `private_key_file`, and the generated `.ssh/known_hosts` path from [ansible/ansible.cfg](ansible/ansible.cfg), so stale entries in the caller's global `~/.ssh/known_hosts` do not break redeployments.
 
 ### Network Configuration
 
@@ -302,7 +302,7 @@ kubectl -n flux-system get gitrepositories,kustomizations
 
 ### Kubernetes Dashboard
 
-Kubernetes Dashboard is managed by Flux from [../gitops/infrastructure/kubernetes-dashboard](../gitops/infrastructure/kubernetes-dashboard). It uses the bundled RKE2 `nginx` ingress class and cert-manager from [../gitops/infrastructure/cert-manager](../gitops/infrastructure/cert-manager).
+Kubernetes Dashboard is managed by Flux from [../gitops/infrastructure/kubernetes-dashboard](../gitops/infrastructure/kubernetes-dashboard). It uses the Flux-managed `nginx` ingress class from [../gitops/infrastructure/ingress](../gitops/infrastructure/ingress) and cert-manager from [../gitops/infrastructure/cert-manager](../gitops/infrastructure/cert-manager).
 
 When Flux is not bootstrapped yet, apply the dependencies and dashboard manually from the repository root:
 

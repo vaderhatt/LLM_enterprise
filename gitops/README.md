@@ -8,6 +8,12 @@ GitOps live-state repository layout for RKE2 clusters.
 - `infrastructure` contains platform services and cluster-wide dependencies.
 - `apps` contains product/application workloads.
 
+Key platform infrastructure components currently include:
+
+- `infrastructure/ingress` for Flux-managed ingress-nginx
+- `infrastructure/cert-manager` for certificate automation and the lab `selfsigned` issuer
+- `infrastructure/kubernetes-dashboard` for Dashboard, ingress, and access token resources
+
 ## Apply Manually
 
 Before Flux is bootstrapped, you can validate or apply the cluster entrypoint with:
