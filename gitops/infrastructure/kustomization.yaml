@@ -6,6 +6,7 @@ resources:
   - external-secrets
   - vault
   - ingress
+  - kubernetes-dashboard
   - postgres
   - object-storage
   - vector-db

@@ -96,9 +96,6 @@ ansible-playbook playbooks/deploy-rke2.yml -i inventory/dev.ini -b
 
 # 3. Bootstrap Flux GitOps
 ansible-playbook playbooks/bootstrap-flux.yml -i inventory/dev.ini
-
-# 4. Optional: deploy Kubernetes Dashboard
-ansible-playbook playbooks/deploy-dashboard.yml -i inventory/dev.ini
 ```
 
 ## Configuration
@@ -301,31 +298,20 @@ kubectl -n flux-system get gitrepositories,kustomizations
 
 ### Kubernetes Dashboard
 
-Deploy the dashboard after RKE2 is running:
+Kubernetes Dashboard is managed by Flux from [../gitops/infrastructure/kubernetes-dashboard](../gitops/infrastructure/kubernetes-dashboard). It depends on ingress-nginx from [../gitops/infrastructure/ingress](../gitops/infrastructure/ingress) and cert-manager from [../gitops/infrastructure/cert-manager](../gitops/infrastructure/cert-manager).
+
+When Flux is not bootstrapped yet, apply the dependencies and dashboard manually from the repository root:
 
 ```bash
-cd platform/ansible
-ansible-playbook playbooks/deploy-dashboard.yml -i inventory/dev.ini
-```
-
-The playbook installs the upstream Kubernetes Dashboard manifest on the first RKE2 server, creates a TLS-backed Dashboard ingress, and creates an `admin-user` service account token. It expects the `nginx` ingress class from [../gitops/infrastructure/ingress](../gitops/infrastructure/ingress) to already exist. By default the dashboard host is `dashboard.<env>.rke2.local`, for example `dashboard.dev.rke2.local`.
-
-Install ingress first through GitOps or manually while bootstrapping:
-
-```bash
-kubectl apply -k ../gitops/infrastructure/ingress
+kubectl apply -k gitops/infrastructure/ingress
+kubectl apply -k gitops/infrastructure/cert-manager
+kubectl apply -k gitops/infrastructure/kubernetes-dashboard
 ```
 
 Point the dashboard hostname at an ingress node IP with DNS or `/etc/hosts`, then open:
 
 ```text
-https://dashboard.dev.rke2.local/
-```
-
-Override the host when needed:
-
-```bash
-ansible-playbook playbooks/deploy-dashboard.yml -i inventory/dev.ini -e dashboard_host=dashboard.example.com
+https://dashboard.rke2.local/
 ```
 
 Get the login token:

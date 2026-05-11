@@ -45,7 +45,7 @@ The hosts are QEMU/KVM headless VMs running on a single Gentoo physical machine.
 3. Run prerequisites: `cd ansible && ansible-playbook -i inventory/dev.ini playbooks/prerequisites.yml -b`
 4. Deploy RKE2: `cd ansible && ansible-playbook -i inventory/dev.ini playbooks/deploy-rke2.yml -b`
 5. Bootstrap Flux GitOps: `cd ansible && ansible-playbook -i inventory/dev.ini playbooks/bootstrap-flux.yml`
-6. Optionally deploy Kubernetes Dashboard with ingress: `cd ansible && ansible-playbook -i inventory/dev.ini playbooks/deploy-dashboard.yml`
+6. Flux deploys platform add-ons from `../gitops/infrastructure`, including ingress, cert-manager, and Kubernetes Dashboard.
 7. Retrieve kubeconfig from `./kubeconfig` and use `kubectl` to manage the cluster.
 
 ## Notes
