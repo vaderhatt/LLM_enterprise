@@ -104,27 +104,36 @@ variable "ssh_public_key" {
   sensitive   = true
   default     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJuWkPR+Y0sH478sr0MqR3AhSVohoYQLvOsehR0VELxq admin@w237.net"
 }
+
+variable "ansible_ssh_private_key_file" {
+  description = "Path to the SSH private key for the ansible user"
+  type        = string
+  default     = "~/.ssh/id_ed25519"
+}
 ```
 
-**To use your own SSH key:**
+**To use your own SSH keys:**
 
-1. Generate a new key (if needed):
+1. Generate a new key pair (if needed):
    ```bash
-   ssh-keygen -t ed25519 -C "your-email@example.com"
-   cat ~/.ssh/id_ed25519.pub
+   ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -C "ansible@rke2"
    ```
 
-2. Set it as a Terraform variable:
+2. Deploy the public key to VMs and set private key path:
    ```bash
    cd live/dev
-   export TF_VAR_ssh_public_key="ssh-ed25519 YOUR_KEY_HERE"
+   export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_ed25519.pub)"
+   export TF_VAR_ansible_ssh_private_key_file="~/.ssh/id_ed25519"
    terragrunt apply
    ```
 
    Or create `live/dev/terraform.tfvars`:
    ```hcl
-   ssh_public_key = "ssh-ed25519 YOUR_KEY_HERE"
+   ssh_public_key                = "ssh-ed25519 YOUR_PUBLIC_KEY_HERE"
+   ansible_ssh_private_key_file  = "~/.ssh/id_ed25519"
    ```
+
+The generated Ansible inventory will reference the specified private key path for SSH connections.
 
 ### Network Configuration
 
