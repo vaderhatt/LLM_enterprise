@@ -8,7 +8,7 @@ terraform {
 
 inputs = {
   environment      = "stage"
-  storage_pool     = "rke2-storage"
+  storage_pool     = "stage-rke2-storage"
   network_name     = "rke2-net"
   network_cidr     = "10.10.2.0/24"
   network_gateway  = "10.10.2.1"
