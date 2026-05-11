@@ -132,10 +132,3 @@ locals {
     worker_nodes                 = module.worker
   })
 }
-
-resource "local_file" "ansible_inventory" {
-  filename = "${path.module}/../ansible/inventory/hosts.ini.generated"
-  content  = local.ansible_inventory
-
-  file_permission = "0644"
-}

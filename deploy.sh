@@ -82,7 +82,6 @@ setup_ansible_ssh_key() {
 
     export TF_VAR_ssh_public_key
     TF_VAR_ssh_public_key="$(cat "$ANSIBLE_PUBLIC_KEY_PATH")"
-    export TF_VAR_ansible_ssh_private_key_file="$ANSIBLE_KEY_PATH"
 
     log_success "Ansible SSH key ready at: $ANSIBLE_KEY_PATH"
 }
@@ -117,26 +116,10 @@ generate_inventory() {
     cd "$LIVE_DEV_DIR"
     
     INVENTORY_PATH="$ANSIBLE_DIR/inventory/hosts.ini.generated"
-    
-    # Terragrunt runs Terraform from cache, so copy the freshest generated file out.
-    CACHE_INVENTORY=$(find .terragrunt-cache -name "hosts.ini.generated" -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR == 1 {print $2}')
-    if [ -n "$CACHE_INVENTORY" ] && [ -f "$CACHE_INVENTORY" ]; then
-        log_info "Found generated inventory in cache, copying to expected location..."
-        mkdir -p "$(dirname "$INVENTORY_PATH")"
-        cp "$CACHE_INVENTORY" "$INVENTORY_PATH"
-        configure_inventory_ssh_paths "$INVENTORY_PATH"
-        log_success "Inventory copied to: $INVENTORY_PATH"
-        return 0
-    fi
-    
-    if [ -f "$INVENTORY_PATH" ]; then
-        configure_inventory_ssh_paths "$INVENTORY_PATH"
-        log_success "Inventory already available at: $INVENTORY_PATH"
-        return 0
-    fi
-    
-    log_warn "Inventory file not found at: $INVENTORY_PATH or in cache"
-    return 1
+    mkdir -p "$(dirname "$INVENTORY_PATH")"
+    terragrunt output -raw ansible_inventory > "$INVENTORY_PATH"
+    configure_inventory_ssh_paths "$INVENTORY_PATH"
+    log_success "Inventory written to: $INVENTORY_PATH"
 }
 
 prepare_known_hosts() {
@@ -159,9 +142,12 @@ prepare_known_hosts() {
 
 # Wait for VMs to be ready
 wait_for_vms() {
-    log_info "Waiting for VMs to be ready (30 seconds for cloud-init)..."
-    sleep 30
-    log_success "VMs should be ready"
+    log_info "Waiting for VMs to accept SSH..."
+    cd "$ANSIBLE_DIR"
+
+    INVENTORY="inventory/hosts.ini.generated"
+    ansible all -i "$INVENTORY" -m wait_for_connection -a "timeout=180"
+    log_success "VMs are reachable over SSH"
 }
 
 # Test SSH connectivity

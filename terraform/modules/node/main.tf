@@ -26,4 +26,21 @@ resource "libvirt_domain" "vm" {
   network_interface {
     network_id = var.network_id
   }
+
+  xml {
+    xslt = <<-EOT
+      <?xml version="1.0" ?>
+      <xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+        <xsl:output omit-xml-declaration="yes" indent="yes"/>
+        <xsl:template match="node()|@*">
+          <xsl:copy>
+            <xsl:apply-templates select="node()|@*"/>
+          </xsl:copy>
+        </xsl:template>
+        <xsl:template match="/domain/cpu">
+          <cpu mode="host-passthrough" check="none"/>
+        </xsl:template>
+      </xsl:stylesheet>
+    EOT
+  }
 }

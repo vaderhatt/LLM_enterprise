@@ -6,4 +6,6 @@ live/**/*.tfstate.backup
 live/**/.terraform.lock.hcl
 ansible/inventory/hosts.ini.generated
 ansible/.ssh/
+ansible/kubeconfig
+ansible/playbooks/kubeconfig
 terraform/.terraform.lock.hcl

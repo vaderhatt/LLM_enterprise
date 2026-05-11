@@ -14,7 +14,7 @@
           - curl
           - tar
           - iptables
-          - conntrack-tools
+          - conntrack
           - linux-headers-generic
         state: present
 

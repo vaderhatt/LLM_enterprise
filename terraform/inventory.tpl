@@ -8,5 +8,15 @@ ${node.name} ansible_host=${node.ip_address} ansible_user=${ansible_user} ansibl
 ${node.name} ansible_host=${node.ip_address} ansible_user=${ansible_user} ansible_ssh_private_key_file=${ansible_ssh_private_key_file}
 %{ endfor ~}
 
+[rke2_servers:children]
+controlplane
+
+[rke2_agents:children]
+worker
+
+[rke2_cluster:children]
+rke2_servers
+rke2_agents
+
 [all:vars]
 ansible_python_interpreter=/usr/bin/python3
