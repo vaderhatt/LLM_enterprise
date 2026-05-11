@@ -13,11 +13,19 @@ provider "libvirt" {
   uri = "qemu:///system"
 }
 
+resource "libvirt_pool" "rke2" {
+  name = var.storage_pool
+  type = "dir"
+  path = "/var/lib/libvirt/images/${var.storage_pool}"
+}
+
 resource "libvirt_volume" "ubuntu_base" {
-  name   = "ubuntu-base.qcow2"
-  pool   = var.storage_pool
-  source = var.ubuntu_image_path
-  format = "qcow2"
+  name           = "ubuntu-base.qcow2"
+  pool           = libvirt_pool.rke2.name
+  source         = var.ubuntu_image_path
+  format         = "qcow2"
+  
+  depends_on = [libvirt_pool.rke2]
 }
 
 locals {
