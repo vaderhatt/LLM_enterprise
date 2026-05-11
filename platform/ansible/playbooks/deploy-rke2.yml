@@ -1,7 +1,11 @@
 ---
 - name: Deploy RKE2 cluster
   hosts: all
-  become: yes
+  become: true
+  vars:
+    cluster_rke2_config:
+      disable:
+        - rke2-ingress-nginx
   roles:
     - role: rke2
 

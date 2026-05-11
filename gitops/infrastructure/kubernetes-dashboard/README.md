@@ -10,10 +10,10 @@ This component expects:
 Default host:
 
 ```text
-dashboard.rke2.local
+dashboard.w237.local
 ```
 
-Point that hostname to an ingress node IP with DNS or `/etc/hosts`.
+Point that hostname to `worker1` with DNS or `/etc/hosts`.
 
 Get the login token:
 

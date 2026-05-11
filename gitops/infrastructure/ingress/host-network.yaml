@@ -8,6 +8,8 @@ spec:
     spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        kubernetes.io/hostname: worker1
       containers:
         - name: controller
           ports:

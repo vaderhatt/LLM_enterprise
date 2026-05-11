@@ -242,6 +242,10 @@ sudo apt-get install libvirt-bin
 sudo systemctl start libvirtd
 ```
 
+### Ingress Ownership
+
+The RKE2 bundled ingress controller is disabled in [ansible/playbooks/deploy-rke2.yml](ansible/playbooks/deploy-rke2.yml). Ingress is managed by Flux from [../gitops/infrastructure/ingress](../gitops/infrastructure/ingress), including host ports 80 and 443.
+
 ### Ansible Playbook Issues
 
 Check prerequisites playbook logs:
@@ -298,23 +302,23 @@ kubectl -n flux-system get gitrepositories,kustomizations
 
 ### Kubernetes Dashboard
 
-Kubernetes Dashboard is managed by Flux from [../gitops/infrastructure/kubernetes-dashboard](../gitops/infrastructure/kubernetes-dashboard). It depends on ingress-nginx from [../gitops/infrastructure/ingress](../gitops/infrastructure/ingress) and cert-manager from [../gitops/infrastructure/cert-manager](../gitops/infrastructure/cert-manager).
+Kubernetes Dashboard is managed by Flux from [../gitops/infrastructure/kubernetes-dashboard](../gitops/infrastructure/kubernetes-dashboard). It uses the bundled RKE2 `nginx` ingress class and cert-manager from [../gitops/infrastructure/cert-manager](../gitops/infrastructure/cert-manager).
 
 When Flux is not bootstrapped yet, apply the dependencies and dashboard manually from the repository root:
 
 ```bash
-kubectl apply -k gitops/infrastructure/ingress
 kubectl apply -k gitops/infrastructure/cert-manager
+kubectl apply -k gitops/infrastructure/ingress
 kubectl apply -k gitops/infrastructure/kubernetes-dashboard
 ```
 
 Point the dashboard hostname at an ingress node IP with DNS or `/etc/hosts`, then open:
 
 ```text
-https://dashboard.rke2.local/
+https://dashboard.w237.local/
 ```
 
-The ingress controller binds host ports 80 and 443 on the node running ingress-nginx, so no NodePort suffix is required.
+The ingress controller is pinned to `worker1` and binds host ports 80 and 443, so no NodePort suffix is required.
 
 Get the login token:
 
