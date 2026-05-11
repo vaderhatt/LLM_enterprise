@@ -271,6 +271,28 @@ ansible-playbook playbooks/bootstrap-flux.yml -i inventory/dev.ini \
    -e flux_git_path=./gitops/clusters/dev
 ```
 
+If the repository is private, provide a GitHub token from the control machine. The playbook stores it in a Kubernetes Secret referenced by the Flux `GitRepository`:
+
+```bash
+export GITHUB_USER=<github-user>
+export GITHUB_TOKEN=<github-token-with-repo-read-access>
+ansible-playbook playbooks/bootstrap-flux.yml -i inventory/dev.ini
+```
+
+For a public repository that does not require authentication, disable the token requirement:
+
+```bash
+ansible-playbook playbooks/bootstrap-flux.yml -i inventory/dev.ini -e flux_git_auth_required=false
+```
+
+You can also pass credentials explicitly:
+
+```bash
+ansible-playbook playbooks/bootstrap-flux.yml -i inventory/dev.ini \
+   -e flux_git_username=<github-user> \
+   -e flux_git_password=<github-token-with-repo-read-access>
+```
+
 Check reconciliation:
 
 ```bash

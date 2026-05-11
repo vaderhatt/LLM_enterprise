@@ -12,6 +12,10 @@
     flux_git_branch: main
     flux_environment: "{{ inventory_hostname.split('-')[0] }}"
     flux_git_path: "./gitops/clusters/{{ flux_environment }}"
+    flux_git_username: "{{ lookup('env', 'GITHUB_USER') | default('git', true) }}"
+    flux_git_password: "{{ lookup('env', 'GITHUB_TOKEN') | default('', true) }}"
+    flux_git_auth_required: true
+    flux_git_secret_name: flux-system-git-auth
     flux_sync_manifest: /tmp/flux-system-sync.yml
     flux_interval: 1m
     flux_timeout: 5m
@@ -40,6 +44,16 @@
       delay: 10
       until: kubectl_nodes.rc == 0
 
+    - name: Fail when Git authentication token is missing
+      ansible.builtin.fail:
+        msg: >-
+          Flux Git authentication is required, but no token was provided. Set
+          GITHUB_TOKEN or pass -e flux_git_password=<token>. For a public
+          repository, pass -e flux_git_auth_required=false.
+      when:
+        - flux_git_auth_required | bool
+        - flux_git_password | length == 0
+
     - name: Install Flux controllers
       ansible.builtin.command:
         cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} apply -f {{ flux_install_manifest_url }}"
@@ -56,6 +70,32 @@
         - helm-controller
         - notification-controller
 
+    - name: Write Flux Git authentication secret manifest
+      ansible.builtin.copy:
+        dest: /tmp/flux-system-git-auth.yml
+        mode: "0600"
+        content: |
+          ---
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: {{ flux_git_secret_name }}
+            namespace: {{ flux_namespace }}
+          type: Opaque
+          stringData:
+            username: {{ flux_git_username }}
+            password: {{ flux_git_password }}
+      no_log: true
+      when: flux_git_password | length > 0
+
+    - name: Apply Flux Git authentication secret
+      ansible.builtin.command:
+        cmd: "{{ kubectl_path }} --kubeconfig {{ kubeconfig_path }} apply -f /tmp/flux-system-git-auth.yml"
+      register: flux_git_auth_apply
+      changed_when: "'created' in flux_git_auth_apply.stdout or 'configured' in flux_git_auth_apply.stdout"
+      no_log: true
+      when: flux_git_password | length > 0
+
     - name: Write Flux sync manifest
       ansible.builtin.copy:
         dest: "{{ flux_sync_manifest }}"
@@ -71,6 +111,10 @@
             interval: {{ flux_interval }}
             ref:
               branch: {{ flux_git_branch }}
+          {% if flux_git_password | length > 0 %}
+            secretRef:
+              name: {{ flux_git_secret_name }}
+          {% endif %}
             url: {{ flux_git_url }}
           ---
           apiVersion: kustomize.toolkit.fluxcd.io/v1
