@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/local"
       version = "~> 2.0"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.0"
+    }
   }
 }
 
@@ -17,10 +21,35 @@ provider "libvirt" {
   uri = "qemu:///system"
 }
 
+resource "null_resource" "storage_pool_directory" {
+  triggers = {
+    path = "/mnt/raid1/LLM_enterprise_storage/VM/${var.storage_pool}"
+  }
+
+  provisioner "local-exec" {
+    command = "mkdir -p ${self.triggers.path}"
+  }
+}
+
 resource "libvirt_pool" "rke2" {
   name = var.storage_pool
   type = "dir"
-  path = "/var/lib/libvirt/images/${var.storage_pool}"
+  path = "/mnt/raid1/LLM_enterprise_storage/VM/${var.storage_pool}"
+
+  depends_on = [null_resource.storage_pool_directory]
+}
+
+resource "null_resource" "storage_pool_active" {
+  triggers = {
+    pool = libvirt_pool.rke2.name
+    path = libvirt_pool.rke2.path
+  }
+
+  provisioner "local-exec" {
+    command = "virsh -c qemu:///system pool-info ${self.triggers.pool} | grep -q 'State:.*running' || virsh -c qemu:///system pool-start ${self.triggers.pool}; virsh -c qemu:///system pool-refresh ${self.triggers.pool}"
+  }
+
+  depends_on = [libvirt_pool.rke2]
 }
 
 resource "libvirt_volume" "ubuntu_base" {
@@ -29,7 +58,7 @@ resource "libvirt_volume" "ubuntu_base" {
   source = var.ubuntu_image_path
   format = "qcow2"
 
-  depends_on = [libvirt_pool.rke2]
+  depends_on = [null_resource.storage_pool_active]
 }
 
 locals {
@@ -66,6 +95,8 @@ module "control_plane" {
   source   = "./modules/node"
   for_each = local.control_plane_nodes
 
+  depends_on = [null_resource.storage_pool_active]
+
   name                        = "${local.env_prefix}${each.key}"
   ip_address                  = each.value.ip
   ubuntu_image_base_volume_id = libvirt_volume.ubuntu_base.id
@@ -80,6 +111,8 @@ module "worker" {
   source   = "./modules/node"
   for_each = local.worker_nodes
 
+  depends_on = [null_resource.storage_pool_active]
+
   name                        = "${local.env_prefix}${each.key}"
   ip_address                  = each.value.ip
   ubuntu_image_base_volume_id = libvirt_volume.ubuntu_base.id
@@ -93,10 +126,10 @@ module "worker" {
 # Generate Ansible inventory from infrastructure
 locals {
   ansible_inventory = templatefile("${path.module}/inventory.tpl", {
-    ansible_user                    = var.ansible_user
-    ansible_ssh_private_key_file    = var.ansible_ssh_private_key_file
-    control_plane_nodes             = module.control_plane
-    worker_nodes                    = module.worker
+    ansible_user                 = var.ansible_user
+    ansible_ssh_private_key_file = var.ansible_ssh_private_key_file
+    control_plane_nodes          = module.control_plane
+    worker_nodes                 = module.worker
   })
 }
 

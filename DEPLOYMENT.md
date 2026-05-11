@@ -95,7 +95,17 @@ ansible-playbook playbooks/deploy-rke2.yml -i inventory/hosts.ini.generated -b
 
 ### SSH Keys
 
-The SSH public key is defined in [terraform/variables.tf](terraform/variables.tf):
+The deployment script keeps Ansible SSH material under the Ansible project tree:
+
+```bash
+ansible/.ssh/id_ed25519
+ansible/.ssh/id_ed25519.pub
+ansible/.ssh/known_hosts
+```
+
+These files are generated runtime artifacts and are ignored by git. `deploy.sh` copies the private/public key from `/home/ansible/.ssh/id_ed25519*`, fixes permissions, exports the public key to Terraform for cloud-init, and rewrites the generated inventory to use the repo-local private key.
+
+The related Terraform variables are defined in [terraform/variables.tf](terraform/variables.tf):
 
 ```hcl
 variable "ssh_public_key" {
@@ -108,32 +118,23 @@ variable "ssh_public_key" {
 variable "ansible_ssh_private_key_file" {
   description = "Path to the SSH private key for the ansible user"
   type        = string
-  default     = "~/.ssh/id_ed25519"
+  default     = "/home/ansible/.ssh/id_ed25519"
 }
 ```
 
-**To use your own SSH keys:**
+**To use a different source key:**
 
-1. Generate a new key pair (if needed):
+1. Create or install the key for the local `ansible` user:
    ```bash
-   ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -C "ansible@rke2"
+  sudo -u ansible ssh-keygen -t ed25519 -f /home/ansible/.ssh/id_ed25519 -C "ansible@rke2"
    ```
 
-2. Deploy the public key to VMs and set private key path:
+2. Run deployment from the repo root:
    ```bash
-   cd live/dev
-   export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_ed25519.pub)"
-   export TF_VAR_ansible_ssh_private_key_file="~/.ssh/id_ed25519"
-   terragrunt apply
+  ./deploy.sh
    ```
 
-   Or create `live/dev/terraform.tfvars`:
-   ```hcl
-   ssh_public_key                = "ssh-ed25519 YOUR_PUBLIC_KEY_HERE"
-   ansible_ssh_private_key_file  = "~/.ssh/id_ed25519"
-   ```
-
-The generated Ansible inventory will reference the specified private key path for SSH connections.
+The generated Ansible inventory will reference `ansible/.ssh/id_ed25519` through an absolute path and use `ansible/.ssh/known_hosts`, so stale entries in the caller's global `~/.ssh/known_hosts` do not break redeployments.
 
 ### Network Configuration
 

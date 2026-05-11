@@ -9,6 +9,11 @@ PROJECT_ROOT="$SCRIPT_DIR"
 TERRAFORM_DIR="$PROJECT_ROOT/terraform"
 ANSIBLE_DIR="$PROJECT_ROOT/ansible"
 LIVE_DEV_DIR="$PROJECT_ROOT/live/dev"
+ANSIBLE_KEY_DIR="$ANSIBLE_DIR/.ssh"
+ANSIBLE_KEY_SOURCE="/home/ansible/.ssh/id_ed25519"
+ANSIBLE_KEY_PATH="$ANSIBLE_KEY_DIR/id_ed25519"
+ANSIBLE_PUBLIC_KEY_PATH="$ANSIBLE_KEY_PATH.pub"
+ANSIBLE_KNOWN_HOSTS_PATH="$ANSIBLE_KEY_DIR/known_hosts"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -36,8 +41,50 @@ check_prerequisites() {
     command -v terragrunt &> /dev/null || { log_warn "terragrunt not found"; return 1; }
     command -v ansible &> /dev/null || { log_warn "ansible not found"; return 1; }
     command -v ansible-playbook &> /dev/null || { log_warn "ansible-playbook not found"; return 1; }
+    command -v ssh-keygen &> /dev/null || { log_warn "ssh-keygen not found"; return 1; }
+    command -v ssh-keyscan &> /dev/null || { log_warn "ssh-keyscan not found"; return 1; }
+    command -v sudo &> /dev/null || { log_warn "sudo not found"; return 1; }
     
     log_success "All prerequisites met"
+}
+
+# Copy Ansible SSH key into the Ansible project tree
+setup_ansible_ssh_key() {
+    log_info "Preparing Ansible SSH key..."
+
+    mkdir -p "$ANSIBLE_KEY_DIR"
+    chmod 700 "$ANSIBLE_KEY_DIR"
+
+    if [ ! -f "$ANSIBLE_KEY_SOURCE" ] && ! sudo -n test -f "$ANSIBLE_KEY_SOURCE"; then
+        log_warn "Source key not found: $ANSIBLE_KEY_SOURCE"
+        return 1
+    fi
+
+    if [ -r "$ANSIBLE_KEY_SOURCE" ]; then
+        cp "$ANSIBLE_KEY_SOURCE" "$ANSIBLE_KEY_PATH"
+    else
+        sudo cp "$ANSIBLE_KEY_SOURCE" "$ANSIBLE_KEY_PATH"
+        sudo chown "$(id -u):$(id -g)" "$ANSIBLE_KEY_PATH"
+    fi
+    chmod 600 "$ANSIBLE_KEY_PATH"
+
+    if [ -f "$ANSIBLE_KEY_SOURCE.pub" ] || sudo -n test -f "$ANSIBLE_KEY_SOURCE.pub"; then
+        if [ -r "$ANSIBLE_KEY_SOURCE.pub" ]; then
+            cp "$ANSIBLE_KEY_SOURCE.pub" "$ANSIBLE_PUBLIC_KEY_PATH"
+        else
+            sudo cp "$ANSIBLE_KEY_SOURCE.pub" "$ANSIBLE_PUBLIC_KEY_PATH"
+            sudo chown "$(id -u):$(id -g)" "$ANSIBLE_PUBLIC_KEY_PATH"
+        fi
+    else
+        ssh-keygen -y -f "$ANSIBLE_KEY_PATH" > "$ANSIBLE_PUBLIC_KEY_PATH"
+    fi
+    chmod 644 "$ANSIBLE_PUBLIC_KEY_PATH"
+
+    export TF_VAR_ssh_public_key
+    TF_VAR_ssh_public_key="$(cat "$ANSIBLE_PUBLIC_KEY_PATH")"
+    export TF_VAR_ansible_ssh_private_key_file="$ANSIBLE_KEY_PATH"
+
+    log_success "Ansible SSH key ready at: $ANSIBLE_KEY_PATH"
 }
 
 # Terraform plan and apply
@@ -48,12 +95,20 @@ terraform_apply() {
     terragrunt plan
     read -p "Review the plan above. Continue with apply? (yes/no): " -r
     if [[ $REPLY == "yes" ]]; then
-        terragrunt apply
+        terragrunt apply -auto-approve
         log_success "Terraform apply completed"
     else
         log_warn "Terraform apply skipped"
         exit 1
     fi
+}
+
+configure_inventory_ssh_paths() {
+    local inventory_path="$1"
+
+    sed -i "s|ansible_ssh_private_key_file=[^[:space:]]*|ansible_ssh_private_key_file=$ANSIBLE_KEY_PATH|g" "$inventory_path"
+    sed -i "/^ansible_ssh_common_args=/d" "$inventory_path"
+    printf "ansible_ssh_common_args='-o UserKnownHostsFile=%s -o StrictHostKeyChecking=yes'\n" "$ANSIBLE_KNOWN_HOSTS_PATH" >> "$inventory_path"
 }
 
 # Generate Ansible inventory
@@ -63,24 +118,43 @@ generate_inventory() {
     
     INVENTORY_PATH="$ANSIBLE_DIR/inventory/hosts.ini.generated"
     
-    # Check if inventory exists in the expected location
-    if [ -f "$INVENTORY_PATH" ]; then
-        log_success "Inventory generated at: $INVENTORY_PATH"
+    # Terragrunt runs Terraform from cache, so copy the freshest generated file out.
+    CACHE_INVENTORY=$(find .terragrunt-cache -name "hosts.ini.generated" -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR == 1 {print $2}')
+    if [ -n "$CACHE_INVENTORY" ] && [ -f "$CACHE_INVENTORY" ]; then
+        log_info "Found generated inventory in cache, copying to expected location..."
+        mkdir -p "$(dirname "$INVENTORY_PATH")"
+        cp "$CACHE_INVENTORY" "$INVENTORY_PATH"
+        configure_inventory_ssh_paths "$INVENTORY_PATH"
+        log_success "Inventory copied to: $INVENTORY_PATH"
         return 0
     fi
     
-    # If not found, check in Terragrunt cache and copy it
-    CACHE_INVENTORY=$(find .terragrunt-cache -name "hosts.ini.generated" -type f 2>/dev/null | head -1)
-    if [ -n "$CACHE_INVENTORY" ] && [ -f "$CACHE_INVENTORY" ]; then
-        log_info "Found inventory in cache, copying to expected location..."
-        mkdir -p "$(dirname "$INVENTORY_PATH")"
-        cp "$CACHE_INVENTORY" "$INVENTORY_PATH"
-        log_success "Inventory copied to: $INVENTORY_PATH"
+    if [ -f "$INVENTORY_PATH" ]; then
+        configure_inventory_ssh_paths "$INVENTORY_PATH"
+        log_success "Inventory already available at: $INVENTORY_PATH"
         return 0
     fi
     
     log_warn "Inventory file not found at: $INVENTORY_PATH or in cache"
     return 1
+}
+
+prepare_known_hosts() {
+    log_info "Preparing Ansible SSH known_hosts..."
+    cd "$ANSIBLE_DIR"
+
+    local inventory="inventory/hosts.ini.generated"
+    if [ ! -f "$inventory" ]; then
+        log_warn "Inventory not found: $inventory"
+        return 1
+    fi
+
+    : > "$ANSIBLE_KNOWN_HOSTS_PATH"
+    awk '{ for (field = 1; field <= NF; field++) if ($field ~ /^ansible_host=/) { sub(/^ansible_host=/, "", $field); print $field } }' "$inventory" | sort -u | while read -r host; do
+        ssh-keyscan -T 5 -H "$host" >> "$ANSIBLE_KNOWN_HOSTS_PATH" 2>/dev/null || true
+    done
+    chmod 644 "$ANSIBLE_KNOWN_HOSTS_PATH"
+    log_success "Ansible known_hosts ready at: $ANSIBLE_KNOWN_HOSTS_PATH"
 }
 
 # Wait for VMs to be ready
@@ -130,11 +204,13 @@ main() {
     log_info "Starting RKE2 Infrastructure Deployment"
     
     check_prerequisites || exit 1
+    setup_ansible_ssh_key || exit 1
     terraform_apply || exit 1
     generate_inventory || exit 1
+    prepare_known_hosts || exit 1
     wait_for_vms
     test_ssh_connectivity || { log_warn "SSH connectivity test failed. Check network and SSH keys."; exit 1; }
-    read -p "Ready to run Ansible playbooks? (yes/no): " -r
+    read -p "Ready to run Ansible playbooks? (yes/no): " -r || REPLY="no"
     if [[ $REPLY == "yes" ]]; then
         run_prerequisites || exit 1
         run_rke2_deploy || exit 1
