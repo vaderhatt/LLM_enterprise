@@ -49,7 +49,7 @@ This script will:
 
 ```bash
 # From the project root
-cd live/dev
+cd terragrunt/dev
 terragrunt plan        # Review the infrastructure changes
 terragrunt apply       # Provision VMs, network, storage pool
 ```
@@ -59,7 +59,7 @@ This creates:
 - 3 worker VMs (worker1, worker2, worker3) at 10.10.1.21-23
 - Libvirt network `dev-rke2-net`
 - Libvirt storage pool `dev-rke2-storage`
-- VM disks and cloud-init ISOs under the shared `data_dir` input from [live/root.hcl](live/root.hcl)
+- VM disks and cloud-init ISOs under the shared `data_dir` input from [terragrunt/root.hcl](terragrunt/root.hcl)
 - Cloud-init configurations with SSH keys for the `ansible` user
 
 **Generated files:**
@@ -156,7 +156,7 @@ The generated Ansible inventory will reference `.ssh/id_ed25519` and `.ssh/known
 
 ### Network Configuration
 
-Edit the target environment file, for example [live/dev/terragrunt.hcl](live/dev/terragrunt.hcl):
+Edit the target environment file, for example [terragrunt/dev/terragrunt.hcl](terragrunt/dev/terragrunt.hcl):
 
 ```hcl
 network_cidr     = "10.10.1.0/24"
@@ -167,7 +167,7 @@ worker_ips        = ["10.10.1.21", "10.10.1.22", "10.10.1.23"]
 
 ### VM Sizing
 
-Shared VM sizing defaults are defined in [live/root.hcl](live/root.hcl):
+Shared VM sizing defaults are defined in [terragrunt/root.hcl](terragrunt/root.hcl):
 
 ```hcl
 control_plane_vm = {
@@ -283,32 +283,17 @@ kubectl -n kubernetes-dashboard get secret admin-user -o jsonpath='{.data.token}
 
 ```
 LLM_enterprise/
-├── terraform/
-│   ├── main.tf                  # Main configuration (pool, volume, modules)
-│   ├── variables.tf             # Variables (SSH keys, sizing, networking)
-│   ├── outputs.tf               # Outputs (inventory generation)
-│   ├── cloud_init.cfg           # Cloud-init template
-│   ├── inventory.tpl            # Ansible inventory template
-│   └── modules/
-│       └── node/                # VM module
-├── ansible/
-│   ├── playbooks/
-│   │   ├── prerequisites.yml    # OS preparation
-│   │   ├── deploy-rke2.yml      # RKE2 deployment
-│   │   └── deploy-dashboard.yml # Optional Kubernetes Dashboard
-│   ├── inventory/
-│   │   ├── dev.ini              # Generated dev inventory
-│   │   ├── stage.ini            # Generated stage inventory
-│   │   ├── prod.ini             # Generated prod inventory
-│   │   └── all.ini              # Generated aggregate inventory
-│   └── roles/
-│       └── rke2-ansible/        # RKE2 Ansible role
-├── deploy.sh                    # Automated deployment script
-└── live/
-  ├── root.hcl                 # Shared Terragrunt state configuration
-    └── dev/                     # Terragrunt environment
-        ├── terragrunt.hcl
-        └── terraform.tfstate
+├── platform/
+│   ├── terraform/               # Terraform module/source
+│   ├── terragrunt/              # Terragrunt live environments
+│   ├── ansible/                 # Playbooks, roles, generated inventories
+│   ├── scripts/                 # Helper scripts
+│   ├── deploy.sh                # Automated deployment script
+│   └── DEPLOYMENT.md            # Platform deployment guide
+└── gitops/
+   ├── clusters/
+   ├── infrastructure/
+   └── apps/
 ```
 
 ## Next Steps
