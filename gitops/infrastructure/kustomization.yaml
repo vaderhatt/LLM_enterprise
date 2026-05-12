@@ -4,8 +4,8 @@ resources:
   - cilium
   - cert-manager
   - external-secrets
-  - vault
-  - ingress
+  - vault-or-openbao
+  - ingress-or-gateway
   - kubernetes-dashboard
   - postgres
   - object-storage

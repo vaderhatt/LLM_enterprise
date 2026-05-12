@@ -11,10 +11,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - dashboard.w237.local
+        - k8s.example.local
       secretName: kubernetes-dashboard-tls
   rules:
-    - host: dashboard.w237.local
+    - host: k8s.example.local
       http:
         paths:
           - path: /

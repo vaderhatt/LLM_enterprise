@@ -245,7 +245,7 @@ sudo systemctl start libvirtd
 
 ### Ingress Ownership
 
-The RKE2 bundled ingress controller is disabled in [ansible/playbooks/deploy-rke2.yml](ansible/playbooks/deploy-rke2.yml). Ingress is managed by Flux from [../gitops/infrastructure/ingress](../gitops/infrastructure/ingress), including host ports 80 and 443.
+The RKE2 bundled ingress controller is disabled in [ansible/playbooks/deploy-rke2.yml](ansible/playbooks/deploy-rke2.yml). Ingress is managed by Flux from [../gitops/infrastructure/ingress-or-gateway](../gitops/infrastructure/ingress-or-gateway), including host ports 80 and 443.
 
 ### Ansible Playbook Issues
 
@@ -264,7 +264,7 @@ cd platform/ansible
 ansible-playbook playbooks/bootstrap-flux.yml -i inventory/dev.ini
 ```
 
-By default, Flux watches this repository on branch `main` and applies the matching environment path, such as [../../gitops/clusters/dev](../../gitops/clusters/dev) for the dev inventory. Override the source for forks, private mirrors, or a different environment path:
+By default, Flux watches this repository on branch `main` and applies the matching environment path, such as [../../gitops/clusters/dev](../../gitops/clusters/dev) for the dev inventory. That environment entrypoint points infrastructure reconciliation at `gitops/clusters/<env>/infrastructure`, where environment-specific patches such as Dashboard DNS names are applied. Override the source for forks, private mirrors, or a different environment path:
 
 ```bash
 ansible-playbook playbooks/bootstrap-flux.yml -i inventory/dev.ini \
@@ -303,20 +303,20 @@ kubectl -n flux-system get gitrepositories,kustomizations
 
 ### Kubernetes Dashboard
 
-Kubernetes Dashboard is managed by Flux from [../gitops/infrastructure/kubernetes-dashboard](../gitops/infrastructure/kubernetes-dashboard). It uses the Flux-managed `nginx` ingress class from [../gitops/infrastructure/ingress](../gitops/infrastructure/ingress) and cert-manager from [../gitops/infrastructure/cert-manager](../gitops/infrastructure/cert-manager).
+Kubernetes Dashboard is managed by Flux from [../gitops/infrastructure/kubernetes-dashboard](../gitops/infrastructure/kubernetes-dashboard). It uses the Flux-managed `nginx` ingress class from [../gitops/infrastructure/ingress-or-gateway](../gitops/infrastructure/ingress-or-gateway) and cert-manager from [../gitops/infrastructure/cert-manager](../gitops/infrastructure/cert-manager).
 
 When Flux is not bootstrapped yet, apply the dependencies and dashboard manually from the repository root:
 
 ```bash
 kubectl apply -k gitops/infrastructure/cert-manager
-kubectl apply -k gitops/infrastructure/ingress
+kubectl apply -k gitops/infrastructure/ingress-or-gateway
 kubectl apply -k gitops/infrastructure/kubernetes-dashboard
 ```
 
-Point the dashboard hostname at an ingress node IP with DNS or `/etc/hosts`, then open:
+Point the environment dashboard hostname at an ingress node IP with DNS or `/etc/hosts`, then open:
 
 ```text
-https://dashboard.w237.local/
+https://k8s.dev.w237.local/
 ```
 
 The ingress controller is pinned to `worker1` and binds host ports 80 and 443, so no NodePort suffix is required.

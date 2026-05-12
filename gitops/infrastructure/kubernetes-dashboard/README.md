@@ -4,16 +4,24 @@ Kubernetes Dashboard managed by Flux/Kustomize.
 
 This component expects:
 
-- `ingress-nginx` from `gitops/infrastructure/ingress`
+- `ingress-nginx` from `gitops/infrastructure/ingress-or-gateway`
 - cert-manager and the `selfsigned` ClusterIssuer from `gitops/infrastructure/cert-manager`
 
-Default host:
+Default base host, before environment overlays:
 
 ```text
-dashboard.w237.local
+k8s.example.local
 ```
 
-Point that hostname to `worker1` with DNS or `/etc/hosts`.
+Environment overlays set the live hostnames:
+
+```text
+k8s.dev.w237.local
+k8s.stage.w237.local
+k8s.prod.w237.local
+```
+
+Point the relevant hostname to `worker1` with DNS or `/etc/hosts`.
 
 Get the login token:
 
@@ -25,4 +33,5 @@ Validate before applying:
 
 ```bash
 kubectl kustomize gitops/infrastructure/kubernetes-dashboard
+kubectl kustomize gitops/clusters/dev/infrastructure
 ```
