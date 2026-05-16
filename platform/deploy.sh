@@ -10,8 +10,9 @@ TERRAFORM_DIR="$PROJECT_ROOT/terraform"
 ANSIBLE_DIR="$PROJECT_ROOT/ansible"
 DEPLOY_ENV="${1:-${DEPLOY_ENV:-dev}}"
 LIVE_ENV_DIR="$PROJECT_ROOT/terragrunt/$DEPLOY_ENV"
+ANSIBLE_SYSTEM_USER="${ANSIBLE_SYSTEM_USER:-ansible}"
 ANSIBLE_KEY_DIR="$ANSIBLE_DIR/.ssh"
-ANSIBLE_KEY_SOURCE="${ANSIBLE_KEY_SOURCE:-$HOME/.ssh/id_ed25519}"
+ANSIBLE_KEY_SOURCE="${ANSIBLE_KEY_SOURCE:-}"
 ANSIBLE_KEY_PATH="$ANSIBLE_KEY_DIR/id_ed25519"
 ANSIBLE_PUBLIC_KEY_PATH="$ANSIBLE_KEY_PATH.pub"
 ANSIBLE_KNOWN_HOSTS_PATH="$ANSIBLE_KEY_DIR/known_hosts"
@@ -43,17 +44,129 @@ inventory_hosts() {
     awk '{ for (field = 1; field <= NF; field++) if ($field ~ /^ansible_host=/) { sub(/^ansible_host=/, "", $field); print $field } }' "$inventory_path" | sort -u
 }
 
+run_as_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+package_for_command() {
+    local package_manager="$1"
+    local command_name="$2"
+
+    case "$package_manager:$command_name" in
+        apt-get:ansible-playbook) printf 'ansible' ;;
+        apt-get:ssh-keygen|apt-get:ssh-keyscan) printf 'openssh-client' ;;
+        dnf:ansible-playbook|yum:ansible-playbook) printf 'ansible-core' ;;
+        dnf:ssh-keygen|dnf:ssh-keyscan|yum:ssh-keygen|yum:ssh-keyscan) printf 'openssh-clients' ;;
+        zypper:ansible-playbook) printf 'ansible' ;;
+        zypper:ssh-keygen|zypper:ssh-keyscan) printf 'openssh' ;;
+        pacman:ansible-playbook) printf 'ansible' ;;
+        pacman:ssh-keygen|pacman:ssh-keyscan) printf 'openssh' ;;
+        *) printf '%s' "$command_name" ;;
+    esac
+}
+
+detect_package_manager() {
+    for package_manager in apt-get dnf yum zypper pacman; do
+        if command -v "$package_manager" > /dev/null 2>&1; then
+            printf '%s' "$package_manager"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+install_missing_prerequisites() {
+    local missing_commands=("$@")
+    local package_manager
+    local packages=()
+    local package
+
+    if [ "${#missing_commands[@]}" -eq 0 ]; then
+        return 0
+    fi
+
+    if ! package_manager="$(detect_package_manager)"; then
+        log_warn "Missing commands: ${missing_commands[*]}"
+        log_warn "No supported package manager found. Install these commands manually and rerun."
+        return 1
+    fi
+
+    if [ "$(id -u)" -ne 0 ] && ! command -v sudo > /dev/null 2>&1; then
+        log_warn "Missing commands: ${missing_commands[*]}"
+        log_warn "sudo is unavailable, so automatic package installation cannot run as root."
+        return 1
+    fi
+
+    for command_name in "${missing_commands[@]}"; do
+        package="$(package_for_command "$package_manager" "$command_name")"
+        if [[ ! " ${packages[*]} " =~ " ${package} " ]]; then
+            packages+=("$package")
+        fi
+    done
+
+    log_warn "Missing commands: ${missing_commands[*]}"
+    log_info "Detected package manager: $package_manager"
+    log_info "Suggested packages: ${packages[*]}"
+    read -p "Install missing prerequisite packages automatically? (yes/no): " -r || REPLY="no"
+    if [[ $REPLY != "yes" ]]; then
+        log_warn "Prerequisite installation skipped"
+        return 1
+    fi
+
+    case "$package_manager" in
+        apt-get)
+            run_as_root apt-get update
+            run_as_root apt-get install -y "${packages[@]}"
+            ;;
+        dnf|yum)
+            run_as_root "$package_manager" install -y "${packages[@]}"
+            ;;
+        zypper)
+            run_as_root zypper --non-interactive install "${packages[@]}"
+            ;;
+        pacman)
+            run_as_root pacman -Sy --needed --noconfirm "${packages[@]}"
+            ;;
+    esac
+}
+
 # Check prerequisites
 check_prerequisites() {
     log_info "Checking prerequisites..."
-    
-    command -v terraform &> /dev/null || { log_warn "terraform not found"; return 1; }
-    command -v terragrunt &> /dev/null || { log_warn "terragrunt not found"; return 1; }
-    command -v ansible &> /dev/null || { log_warn "ansible not found"; return 1; }
-    command -v ansible-playbook &> /dev/null || { log_warn "ansible-playbook not found"; return 1; }
-    command -v ssh-keygen &> /dev/null || { log_warn "ssh-keygen not found"; return 1; }
-    command -v ssh-keyscan &> /dev/null || { log_warn "ssh-keyscan not found"; return 1; }
-    command -v sudo &> /dev/null || { log_warn "sudo not found"; return 1; }
+    local required_commands=(terraform terragrunt ansible ansible-playbook ssh-keygen ssh-keyscan)
+    local missing_commands=()
+    local command_name
+
+    if [ "$(id -u)" -ne 0 ]; then
+        required_commands+=(sudo)
+    fi
+
+    for command_name in "${required_commands[@]}"; do
+        if ! command -v "$command_name" > /dev/null 2>&1; then
+            missing_commands+=("$command_name")
+        fi
+    done
+
+    if [ "${#missing_commands[@]}" -gt 0 ]; then
+        install_missing_prerequisites "${missing_commands[@]}" || return 1
+
+        missing_commands=()
+        for command_name in "${required_commands[@]}"; do
+            if ! command -v "$command_name" > /dev/null 2>&1; then
+                missing_commands+=("$command_name")
+            fi
+        done
+
+        if [ "${#missing_commands[@]}" -gt 0 ]; then
+            log_warn "Still missing required commands after installation attempt: ${missing_commands[*]}"
+            return 1
+        fi
+    fi
     
     log_success "All prerequisites met"
 }
@@ -70,6 +183,42 @@ check_sensitive_inputs() {
     log_success "Required local secret inputs are present"
 }
 
+ensure_ansible_system_user() {
+    local ansible_home
+
+    if ! id "$ANSIBLE_SYSTEM_USER" > /dev/null 2>&1; then
+        log_warn "Local automation user '$ANSIBLE_SYSTEM_USER' does not exist"
+        read -p "Create local user '$ANSIBLE_SYSTEM_USER' and generate an SSH keypair for deployments? (yes/no): " -r || REPLY="no"
+        if [[ $REPLY != "yes" ]]; then
+            log_warn "Local automation user creation skipped"
+            return 1
+        fi
+
+        run_as_root useradd --create-home --shell /bin/bash "$ANSIBLE_SYSTEM_USER"
+    fi
+
+    ansible_home="$(getent passwd "$ANSIBLE_SYSTEM_USER" | cut -d: -f6)"
+    if [ -z "$ansible_home" ]; then
+        log_warn "Could not determine home directory for user '$ANSIBLE_SYSTEM_USER'"
+        return 1
+    fi
+
+    run_as_root install -d -m 700 -o "$ANSIBLE_SYSTEM_USER" -g "$ANSIBLE_SYSTEM_USER" "$ansible_home/.ssh"
+
+    if ! run_as_root test -f "$ansible_home/.ssh/id_ed25519"; then
+        log_info "Generating SSH keypair for local user '$ANSIBLE_SYSTEM_USER'"
+        run_as_root ssh-keygen -t ed25519 -f "$ansible_home/.ssh/id_ed25519" -N "" -C "$ANSIBLE_SYSTEM_USER@$(hostname)"
+        run_as_root chown "$ANSIBLE_SYSTEM_USER:$ANSIBLE_SYSTEM_USER" "$ansible_home/.ssh/id_ed25519" "$ansible_home/.ssh/id_ed25519.pub"
+    fi
+
+    if [ -z "$ANSIBLE_KEY_SOURCE" ]; then
+        ANSIBLE_KEY_SOURCE="$ansible_home/.ssh/id_ed25519"
+    fi
+
+    log_success "Local automation user ready: $ANSIBLE_SYSTEM_USER"
+    log_info "Using Ansible SSH key source: $ANSIBLE_KEY_SOURCE"
+}
+
 # Copy Ansible SSH key into the Ansible project tree
 setup_ansible_ssh_key() {
     log_info "Preparing Ansible SSH key..."
@@ -77,7 +226,12 @@ setup_ansible_ssh_key() {
     mkdir -p "$ANSIBLE_KEY_DIR"
     chmod 700 "$ANSIBLE_KEY_DIR"
 
-    if [ ! -f "$ANSIBLE_KEY_SOURCE" ] && ! sudo -n test -f "$ANSIBLE_KEY_SOURCE"; then
+    if [ -z "$ANSIBLE_KEY_SOURCE" ]; then
+        log_warn "ANSIBLE_KEY_SOURCE is not set"
+        return 1
+    fi
+
+    if [ ! -r "$ANSIBLE_KEY_SOURCE" ] && ! run_as_root test -r "$ANSIBLE_KEY_SOURCE"; then
         log_warn "Source key not found: $ANSIBLE_KEY_SOURCE"
         return 1
     fi
@@ -85,17 +239,17 @@ setup_ansible_ssh_key() {
     if [ -r "$ANSIBLE_KEY_SOURCE" ]; then
         cp "$ANSIBLE_KEY_SOURCE" "$ANSIBLE_KEY_PATH"
     else
-        sudo cp "$ANSIBLE_KEY_SOURCE" "$ANSIBLE_KEY_PATH"
-        sudo chown "$(id -u):$(id -g)" "$ANSIBLE_KEY_PATH"
+        run_as_root cp "$ANSIBLE_KEY_SOURCE" "$ANSIBLE_KEY_PATH"
+        run_as_root chown "$(id -u):$(id -g)" "$ANSIBLE_KEY_PATH"
     fi
     chmod 600 "$ANSIBLE_KEY_PATH"
 
-    if [ -f "$ANSIBLE_KEY_SOURCE.pub" ] || sudo -n test -f "$ANSIBLE_KEY_SOURCE.pub"; then
+    if [ -r "$ANSIBLE_KEY_SOURCE.pub" ] || run_as_root test -r "$ANSIBLE_KEY_SOURCE.pub"; then
         if [ -r "$ANSIBLE_KEY_SOURCE.pub" ]; then
             cp "$ANSIBLE_KEY_SOURCE.pub" "$ANSIBLE_PUBLIC_KEY_PATH"
         else
-            sudo cp "$ANSIBLE_KEY_SOURCE.pub" "$ANSIBLE_PUBLIC_KEY_PATH"
-            sudo chown "$(id -u):$(id -g)" "$ANSIBLE_PUBLIC_KEY_PATH"
+            run_as_root cp "$ANSIBLE_KEY_SOURCE.pub" "$ANSIBLE_PUBLIC_KEY_PATH"
+            run_as_root chown "$(id -u):$(id -g)" "$ANSIBLE_PUBLIC_KEY_PATH"
         fi
     else
         ssh-keygen -y -f "$ANSIBLE_KEY_PATH" > "$ANSIBLE_PUBLIC_KEY_PATH"
@@ -113,6 +267,7 @@ terraform_apply() {
     log_info "Running Terraform plan and apply for $DEPLOY_ENV..."
     cd "$LIVE_ENV_DIR"
     
+    terragrunt init
     terragrunt plan
     read -p "Review the plan above. Continue with apply? (yes/no): " -r
     if [[ $REPLY == "yes" ]]; then
@@ -296,6 +451,7 @@ main() {
     
     check_prerequisites || exit 1
     check_sensitive_inputs || exit 1
+    ensure_ansible_system_user || exit 1
     setup_ansible_ssh_key || exit 1
     terraform_apply || exit 1
     generate_inventory || exit 1
