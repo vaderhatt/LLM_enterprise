@@ -37,6 +37,12 @@ log_warn() {
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
+inventory_hosts() {
+    local inventory_path="$1"
+
+    awk '{ for (field = 1; field <= NF; field++) if ($field ~ /^ansible_host=/) { sub(/^ansible_host=/, "", $field); print $field } }' "$inventory_path" | sort -u
+}
+
 # Check prerequisites
 check_prerequisites() {
     log_info "Checking prerequisites..."
@@ -50,6 +56,18 @@ check_prerequisites() {
     command -v sudo &> /dev/null || { log_warn "sudo not found"; return 1; }
     
     log_success "All prerequisites met"
+}
+
+check_sensitive_inputs() {
+    log_info "Checking required local secret inputs..."
+
+    if [ -z "${SAMBA_ADMIN_PASSWORD:-}" ] && [ ! -s "$SAMBA_ADMIN_PASSWORD_FILE" ]; then
+        log_warn "Samba AD Administrator password is required before rollout"
+        log_warn "Set SAMBA_ADMIN_PASSWORD or write it to: $SAMBA_ADMIN_PASSWORD_FILE"
+        return 1
+    fi
+
+    log_success "Required local secret inputs are present"
 }
 
 # Copy Ansible SSH key into the Ansible project tree
@@ -136,9 +154,26 @@ prepare_known_hosts() {
     fi
 
     : > "$ANSIBLE_KNOWN_HOSTS_PATH"
-    awk '{ for (field = 1; field <= NF; field++) if ($field ~ /^ansible_host=/) { sub(/^ansible_host=/, "", $field); print $field } }' "$inventory" | sort -u | while read -r host; do
-        ssh-keyscan -T 5 -H "$host" >> "$ANSIBLE_KNOWN_HOSTS_PATH" 2>/dev/null || true
-    done
+    while read -r host; do
+        log_info "Scanning SSH host key for $host..."
+        host_key_found=false
+        for attempt in {1..36}; do
+            if ssh-keyscan -T 5 -H "$host" >> "$ANSIBLE_KNOWN_HOSTS_PATH" 2>/dev/null; then
+                host_key_found=true
+                break
+            fi
+
+            if (( attempt % 6 == 0 )); then
+                log_info "Still waiting for SSH host key from $host..."
+            fi
+        done
+
+        if [ "$host_key_found" != "true" ]; then
+            log_warn "Could not collect SSH host key from $host"
+            return 1
+        fi
+    done < <(inventory_hosts "$inventory")
+    sort -u -o "$ANSIBLE_KNOWN_HOSTS_PATH" "$ANSIBLE_KNOWN_HOSTS_PATH"
     chmod 644 "$ANSIBLE_KNOWN_HOSTS_PATH"
     log_success "Ansible known_hosts ready at: $ANSIBLE_KNOWN_HOSTS_PATH"
 }
@@ -260,6 +295,7 @@ main() {
     log_info "Starting RKE2 Infrastructure Deployment"
     
     check_prerequisites || exit 1
+    check_sensitive_inputs || exit 1
     setup_ansible_ssh_key || exit 1
     terraform_apply || exit 1
     generate_inventory || exit 1
