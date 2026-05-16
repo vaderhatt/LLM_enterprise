@@ -112,6 +112,25 @@ variable "domain_controller_vm" {
   }
 }
 
+variable "vault_vm" {
+  description = "Sizing for the HashiCorp Vault VM"
+  type = object({
+    cpus         = number
+    memory_mib   = number
+    disk_size_gb = number
+  })
+  default = {
+    cpus         = 1
+    memory_mib   = 2048
+    disk_size_gb = 20
+  }
+
+  validation {
+    condition     = var.vault_vm.cpus > 0 && var.vault_vm.memory_mib >= 1024 && var.vault_vm.disk_size_gb > 0
+    error_message = "vault_vm must use positive CPU and disk values, and at least 1024 MiB memory."
+  }
+}
+
 variable "network_name" {
   description = "Libvirt network name for the RKE2 VMs"
   type        = string
@@ -164,6 +183,17 @@ variable "domain_controller_ip" {
   validation {
     condition     = var.domain_controller_ip == null ? true : can(cidrhost("${var.domain_controller_ip}/32", 0))
     error_message = "domain_controller_ip must be a valid IPv4 address."
+  }
+}
+
+variable "vault_ip" {
+  description = "Static IP for the HashiCorp Vault server. Defaults to host .40 in network_cidr."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.vault_ip == null ? true : can(cidrhost("${var.vault_ip}/32", 0))
+    error_message = "vault_ip must be a valid IPv4 address."
   }
 }
 

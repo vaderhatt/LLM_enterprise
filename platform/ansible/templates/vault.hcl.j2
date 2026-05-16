@@ -1,0 +1,15 @@
+ui = true
+disable_mlock = true
+api_addr = "{{ vault_api_addr }}"
+cluster_addr = "{{ vault_cluster_addr }}"
+
+storage "file" {
+  path = "{{ vault_data_dir }}"
+}
+
+listener "tcp" {
+  address = "0.0.0.0:8200"
+  cluster_address = "0.0.0.0:8201"
+  tls_cert_file = "{{ vault_tls_dir }}/vault.crt"
+  tls_key_file = "{{ vault_tls_dir }}/vault.key"
+}

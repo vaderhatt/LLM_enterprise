@@ -331,6 +331,32 @@ https://ad.dev.w237.local/lam/
 
 Use the LAM profile password from `.secrets/lam-password` for the LAM configuration/profile login. Use the Samba `Administrator` account password for AD user and group management. The LAM profile is seeded for Samba AD with `windowsUser` and `windowsGroup` account modules on first pod startup and on later restarts.
 
+### Vault
+
+Vault runs on a dedicated VM outside Kubernetes, such as `dev-vault1` at `10.10.1.40`, with DNS name `vault.dev.w237.local`. This keeps the secret store outside the Kubernetes failure domain. Vault uses local file storage under `/opt/vault/data` and a self-signed TLS certificate generated on the VM.
+
+Configure or refresh Vault with:
+
+```bash
+cd platform/ansible
+ansible-playbook playbooks/configure-vault.yml -i inventory/dev.ini -b
+ansible-playbook playbooks/configure-dns.yml -i inventory/dev.ini -b
+```
+
+Check status:
+
+```bash
+VAULT_ADDR=https://vault.dev.w237.local:8200 vault status -tls-skip-verify
+```
+
+First-time initialization and unseal are automated by Ansible. The generated unseal keys and initial root token are stored only in an ignored local file, such as:
+
+```bash
+platform/ansible/.secrets/vault-init-dev.json
+```
+
+Do not commit or share this file. It is required for future automated unseal runs unless you migrate to an auto-unseal backend.
+
 ### Ansible Playbook Issues
 
 Check prerequisites playbook logs:

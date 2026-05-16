@@ -15,6 +15,7 @@
 
     hosts {
         {{ rke2_api_endpoint }} {{ rke2_api_hostname }} k8s.{{ coredns_environment }}.{{ coredns_domain }} ad.{{ coredns_environment }}.{{ coredns_domain }}
+        {{ vault_ip }} {{ vault_hostname }}
 {% for host in groups['rke2_servers'] | default([]) %}
         {{ hostvars[host].ansible_host }} {{ host }}.{{ coredns_domain }} {{ host | regex_replace('^' ~ coredns_environment ~ '-', '') }}.{{ coredns_environment }}.{{ coredns_domain }}
 {% endfor %}

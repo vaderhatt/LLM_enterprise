@@ -37,6 +37,15 @@ output "domain_controller_node" {
   }
 }
 
+output "vault_node" {
+  description = "HashiCorp Vault node details"
+  value = {
+    ip       = module.vault.ip_address
+    name     = module.vault.name
+    hostname = "vault.${var.environment}.${var.internal_domain}"
+  }
+}
+
 output "ansible_inventory_path" {
   description = "Path to generated Ansible inventory file"
   value       = "ansible/inventory/${var.environment}.ini"

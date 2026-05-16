@@ -32,6 +32,10 @@ locals {
     var.domain_controller_ip,
     cidrhost(var.network_cidr, 30)
   )
+  vault_ip = coalesce(
+    var.vault_ip,
+    cidrhost(var.network_cidr, 40)
+  )
   load_balancer_hostname = coalesce(
     var.load_balancer_hostname,
     var.environment != "" ? "lb.${var.environment}.${var.internal_domain}" : "lb.${var.internal_domain}"
@@ -165,6 +169,21 @@ module "domain_controller" {
   network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = local.domain_controller_ip, network_gateway = var.network_gateway })
 }
 
+module "vault" {
+  source = "./modules/node"
+
+  depends_on = [null_resource.storage_pool_active]
+
+  name                        = "${local.env_prefix}vault1"
+  ip_address                  = local.vault_ip
+  ubuntu_image_base_volume_id = libvirt_volume.ubuntu_base.id
+  vm                          = var.vault_vm
+  network_id                  = libvirt_network.rke2_net.id
+  storage_pool                = local.storage_pool_name
+  user_data                   = templatefile("${path.module}/cloud_init.cfg", { hostname = "vault1", ansible_user = var.ansible_user, ssh_public_key = var.ssh_public_key })
+  network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = local.vault_ip, network_gateway = var.network_gateway })
+}
+
 module "worker" {
   source   = "./modules/node"
   for_each = local.worker_nodes
@@ -189,6 +208,7 @@ locals {
     worker_nodes            = module.worker
     load_balancer_node      = module.load_balancer
     domain_controller_node  = module.domain_controller
+    vault_node              = module.vault
     load_balancer_hostname  = local.load_balancer_hostname
     internal_domain         = var.internal_domain
     samba_ad_realm          = var.samba_ad_realm

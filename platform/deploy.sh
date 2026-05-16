@@ -217,6 +217,15 @@ configure_samba_addc() {
     log_success "Samba AD DC configured"
 }
 
+configure_vault() {
+    log_info "Configuring Vault server..."
+    cd "$ANSIBLE_DIR"
+
+    INVENTORY="$ANSIBLE_INVENTORY"
+    ansible-playbook playbooks/configure-vault.yml -i "$INVENTORY" -b
+    log_success "Vault server configured"
+}
+
 configure_ad_ui_secret() {
     log_info "Configuring AD UI Kubernetes secret..."
     cd "$ANSIBLE_DIR"
@@ -260,6 +269,7 @@ main() {
     read -p "Ready to run Ansible playbooks? (yes/no): " -r || REPLY="no"
     if [[ $REPLY == "yes" ]]; then
         configure_samba_addc || exit 1
+        configure_vault || exit 1
         configure_dns_service || exit 1
         run_prerequisites || exit 1
         run_rke2_deploy || exit 1
@@ -280,6 +290,7 @@ main() {
         log_info "  printf '%s\n' '<strong-password>' > ansible/.secrets/samba-admin-password"
         log_info "  chmod 600 ansible/.secrets/samba-admin-password"
         log_info "  ansible-playbook ansible/playbooks/configure-samba-addc.yml -i ansible/$ANSIBLE_INVENTORY -b"
+        log_info "  ansible-playbook ansible/playbooks/configure-vault.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/configure-dns.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/prerequisites.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/deploy-rke2.yml -i ansible/$ANSIBLE_INVENTORY -b"

@@ -14,6 +14,9 @@ ${load_balancer_node.name} ansible_host=${load_balancer_node.ip_address}
 [${environment}_domain_controller]
 ${domain_controller_node.name} ansible_host=${domain_controller_node.ip_address}
 
+[${environment}_vault]
+${vault_node.name} ansible_host=${vault_node.ip_address}
+
 [controlplane:children]
 ${environment}_controlplane
 
@@ -26,11 +29,15 @@ ${environment}_load_balancer
 [domain_controller:children]
 ${environment}_domain_controller
 
+[vault:children]
+${environment}_vault
+
 [${environment}:children]
 ${environment}_controlplane
 ${environment}_worker
 ${environment}_load_balancer
 ${environment}_domain_controller
+${environment}_vault
 
 [rke2_servers:children]
 ${environment}_controlplane
@@ -53,3 +60,5 @@ samba_ad_dns_zone=${lower(samba_ad_realm)}
 samba_ad_netbios_domain=${samba_ad_netbios_domain}
 samba_ad_dc_ip=${domain_controller_node.ip_address}
 samba_ad_dc_hostname=${domain_controller_node.name}
+vault_ip=${vault_node.ip_address}
+vault_hostname=vault.${environment}.${internal_domain}

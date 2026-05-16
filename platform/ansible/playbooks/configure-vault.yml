@@ -1,0 +1,247 @@
+---
+- name: Configure HashiCorp Vault server
+  hosts: vault
+  become: true
+  vars:
+    vault_version: "1.19.0"
+    vault_archive: "vault_{{ vault_version }}_linux_amd64.zip"
+    vault_download_url: "https://releases.hashicorp.com/vault/{{ vault_version }}/{{ vault_archive }}"
+    vault_install_dir: /usr/local/bin
+    vault_config_dir: /etc/vault.d
+    vault_data_dir: /opt/vault/data
+    vault_tls_dir: /etc/vault.d/tls
+    vault_user: vault
+    vault_group: vault
+    vault_api_addr: "https://{{ vault_hostname }}:8200"
+    vault_cluster_addr: "https://{{ vault_ip }}:8201"
+    vault_init_file: "{{ lookup('env', 'VAULT_INIT_FILE') | default(playbook_dir ~ '/../.secrets/vault-init-' ~ coredns_environment ~ '.json', true) }}"
+    vault_key_shares: 5
+    vault_key_threshold: 3
+
+  handlers:
+    - name: Restart vault
+      ansible.builtin.systemd:
+        name: vault
+        state: restarted
+        daemon_reload: true
+
+  tasks:
+    - name: Wait for cloud-init to finish
+      ansible.builtin.command:
+        cmd: cloud-init status --wait
+      changed_when: false
+
+    - name: Install Vault dependencies
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - openssl
+          - unzip
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+        lock_timeout: 600
+
+    - name: Create Vault group
+      ansible.builtin.group:
+        name: "{{ vault_group }}"
+        system: true
+
+    - name: Create Vault user
+      ansible.builtin.user:
+        name: "{{ vault_user }}"
+        group: "{{ vault_group }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: "{{ vault_data_dir }}"
+        create_home: false
+
+    - name: Create Vault directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner | default(vault_user) }}"
+        group: "{{ item.group | default(vault_group) }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ vault_config_dir }}", owner: root, group: "{{ vault_group }}", mode: "0750" }
+        - { path: "{{ vault_data_dir }}", mode: "0750" }
+        - { path: "{{ vault_tls_dir }}", owner: root, group: "{{ vault_group }}", mode: "0750" }
+
+    - name: Download Vault archive
+      ansible.builtin.get_url:
+        url: "{{ vault_download_url }}"
+        dest: "/tmp/{{ vault_archive }}"
+        mode: "0644"
+
+    - name: Extract Vault binary
+      ansible.builtin.unarchive:
+        src: "/tmp/{{ vault_archive }}"
+        dest: /tmp
+        remote_src: true
+        creates: /tmp/vault
+
+    - name: Install Vault binary
+      ansible.builtin.copy:
+        src: /tmp/vault
+        dest: "{{ vault_install_dir }}/vault"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart vault
+
+    - name: Create Vault TLS certificate config
+      ansible.builtin.template:
+        src: ../templates/vault-openssl.cnf.j2
+        dest: "{{ vault_tls_dir }}/openssl.cnf"
+        owner: root
+        group: "{{ vault_group }}"
+        mode: "0640"
+
+    - name: Generate Vault self-signed TLS certificate
+      ansible.builtin.command:
+        cmd: >-
+          openssl req -x509 -nodes -newkey rsa:4096 -days 3650
+          -keyout {{ vault_tls_dir }}/vault.key
+          -out {{ vault_tls_dir }}/vault.crt
+          -config {{ vault_tls_dir }}/openssl.cnf
+      args:
+        creates: "{{ vault_tls_dir }}/vault.crt"
+      notify: Restart vault
+
+    - name: Set Vault TLS permissions
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        owner: root
+        group: "{{ vault_group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ vault_tls_dir }}/vault.crt", mode: "0644" }
+        - { path: "{{ vault_tls_dir }}/vault.key", mode: "0640" }
+
+    - name: Write Vault config
+      ansible.builtin.template:
+        src: ../templates/vault.hcl.j2
+        dest: "{{ vault_config_dir }}/vault.hcl"
+        owner: root
+        group: "{{ vault_group }}"
+        mode: "0640"
+      notify: Restart vault
+
+    - name: Write Vault systemd unit
+      ansible.builtin.template:
+        src: ../templates/vault.service.j2
+        dest: /etc/systemd/system/vault.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart vault
+
+    - name: Enable and start Vault
+      ansible.builtin.systemd:
+        name: vault
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Wait for Vault API port
+      ansible.builtin.wait_for:
+        host: "{{ vault_ip }}"
+        port: 8200
+        timeout: 60
+
+    - name: Check Vault status
+      ansible.builtin.command:
+        cmd: "{{ vault_install_dir }}/vault status -address=https://127.0.0.1:8200 -tls-skip-verify -format=json"
+      register: vault_status
+      changed_when: false
+      failed_when: vault_status.rc not in [0, 2]
+
+    - name: Parse Vault status
+      ansible.builtin.set_fact:
+        vault_status_json: "{{ vault_status.stdout | from_json }}"
+
+    - name: Create local Vault secrets directory
+      ansible.builtin.file:
+        path: "{{ vault_init_file | dirname }}"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      become: false
+
+    - name: Check local Vault init file
+      ansible.builtin.stat:
+        path: "{{ vault_init_file }}"
+      register: vault_init_file_stat
+      delegate_to: localhost
+      become: false
+
+    - name: Initialize Vault when needed
+      ansible.builtin.command:
+        cmd: >-
+          {{ vault_install_dir }}/vault operator init
+          -address=https://127.0.0.1:8200
+          -tls-skip-verify
+          -key-shares={{ vault_key_shares }}
+          -key-threshold={{ vault_key_threshold }}
+          -format=json
+      register: vault_init_result
+      changed_when: true
+      no_log: true
+      when: not vault_status_json.initialized
+
+    - name: Store local Vault init output
+      ansible.builtin.copy:
+        dest: "{{ vault_init_file }}"
+        content: "{{ vault_init_result.stdout }}\n"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      no_log: true
+      when: not vault_status_json.initialized
+
+    - name: Fail when initialized Vault cannot be unsealed automatically
+      ansible.builtin.fail:
+        msg: >-
+          Vault is initialized but sealed, and the local init file is missing at {{ vault_init_file }}.
+          Restore that file or unseal Vault with the original unseal keys.
+      when:
+        - vault_status_json.initialized
+        - vault_status_json.sealed
+        - not vault_init_file_stat.stat.exists
+
+    - name: Load local Vault init output
+      ansible.builtin.set_fact:
+        vault_init_data: >-
+          {{
+            (vault_init_result.stdout | from_json)
+            if (vault_init_result is defined and vault_init_result.stdout is defined)
+            else (lookup('ansible.builtin.file', vault_init_file) | from_json)
+          }}
+      no_log: true
+      when: (not vault_status_json.initialized) or vault_status_json.sealed
+
+    - name: Unseal Vault when sealed
+      ansible.builtin.command:
+        cmd: >-
+          {{ vault_install_dir }}/vault operator unseal
+          -address=https://127.0.0.1:8200
+          -tls-skip-verify
+          {{ item }}
+      loop: "{{ vault_init_data.unseal_keys_b64[:vault_key_threshold] }}"
+      changed_when: true
+      no_log: true
+      when: vault_status_json.sealed
+
+    - name: Check final Vault status
+      ansible.builtin.command:
+        cmd: "{{ vault_install_dir }}/vault status -address=https://127.0.0.1:8200 -tls-skip-verify"
+      register: vault_final_status
+      changed_when: false
+      failed_when: vault_final_status.rc != 0
+
+    - name: Show Vault status summary
+      ansible.builtin.debug:
+        msg: "{{ vault_final_status.stdout_lines }}"

@@ -72,6 +72,13 @@ echo "Generated Ansible inventory: $inventory_path"
                 in_section && /^\[/ { in_section = 0 }
                 in_section && NF { print }
             ' "$env_inventory_path"
+
+            printf '\n[%s_vault]\n' "$env"
+            awk -v section="[${env}_vault]" '
+                $0 == section { in_section = 1; next }
+                in_section && /^\[/ { in_section = 0 }
+                in_section && NF { print }
+            ' "$env_inventory_path"
         fi
     done
 
@@ -87,6 +94,7 @@ echo "Generated Ansible inventory: $inventory_path"
             printf '%s_worker\n' "$env"
             printf '%s_load_balancer\n' "$env"
             printf '%s_domain_controller\n' "$env"
+            printf '%s_vault\n' "$env"
         fi
     done
 
@@ -108,6 +116,11 @@ echo "Generated Ansible inventory: $inventory_path"
     printf '\n[domain_controller:children]\n'
     for env in dev stage prod; do
         [[ -f "$inventory_dir/$env.ini" ]] && printf '%s_domain_controller\n' "$env"
+    done
+
+    printf '\n[vault:children]\n'
+    for env in dev stage prod; do
+        [[ -f "$inventory_dir/$env.ini" ]] && printf '%s_vault\n' "$env"
     done
 
     printf '\n[all:vars]\n'
