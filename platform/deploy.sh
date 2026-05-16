@@ -19,6 +19,8 @@ ANSIBLE_KNOWN_HOSTS_PATH="$ANSIBLE_KEY_DIR/known_hosts"
 ANSIBLE_INVENTORY_KNOWN_HOSTS_PATH=".ssh/known_hosts"
 ANSIBLE_INVENTORY="inventory/$DEPLOY_ENV.ini"
 SAMBA_ADMIN_PASSWORD_FILE="${SAMBA_ADMIN_PASSWORD_FILE:-$ANSIBLE_DIR/.secrets/samba-admin-password}"
+SSH_HOST_KEY_SCAN_ATTEMPTS="${SSH_HOST_KEY_SCAN_ATTEMPTS:-120}"
+SSH_HOST_KEY_SCAN_DELAY="${SSH_HOST_KEY_SCAN_DELAY:-5}"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -312,15 +314,18 @@ prepare_known_hosts() {
     while read -r host; do
         log_info "Scanning SSH host key for $host..."
         host_key_found=false
-        for attempt in {1..36}; do
-            if ssh-keyscan -T 5 -H "$host" >> "$ANSIBLE_KNOWN_HOSTS_PATH" 2>/dev/null; then
+        for (( attempt = 1; attempt <= SSH_HOST_KEY_SCAN_ATTEMPTS; attempt++ )); do
+            scan_output="$(ssh-keyscan -T 5 -H "$host" 2>/dev/null || true)"
+            if [ -n "$scan_output" ]; then
+                printf '%s\n' "$scan_output" >> "$ANSIBLE_KNOWN_HOSTS_PATH"
                 host_key_found=true
                 break
             fi
 
             if (( attempt % 6 == 0 )); then
-                log_info "Still waiting for SSH host key from $host..."
+                log_info "Still waiting for SSH host key from $host... ($(( attempt * SSH_HOST_KEY_SCAN_DELAY ))s elapsed)"
             fi
+            sleep "$SSH_HOST_KEY_SCAN_DELAY"
         done
 
         if [ "$host_key_found" != "true" ]; then
