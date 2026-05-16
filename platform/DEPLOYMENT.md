@@ -309,7 +309,7 @@ dig @10.10.1.10 _ldap._tcp.ad.w237.local SRV
 dig @10.10.1.10 addc1.ad.w237.local
 ```
 
-The deployment script generates the Samba `Administrator` password when missing and stores it in `.secrets/samba-admin-password`, which is intentionally ignored by git. You can override the file path with `SAMBA_ADMIN_PASSWORD_FILE` or override the value for one run with `SAMBA_ADMIN_PASSWORD`.
+The deployment script generates the Samba `Administrator` password when missing and stores it in `.secrets/<env>/samba-admin-password`, which is intentionally ignored by git. You can override the file path with `SAMBA_ADMIN_PASSWORD_FILE` or override the value for one run with `SAMBA_ADMIN_PASSWORD`.
 
 ### AD Management UI
 
@@ -326,7 +326,7 @@ The app is exposed at:
 https://ad.dev.w237.local/lam/
 ```
 
-The deployment script generates `.secrets/lam-password` when missing. Use this value for the LAM configuration/profile login. Use `.secrets/samba-admin-password` for the Samba `Administrator` account when managing AD users and groups. The LAM profile is seeded for Samba AD with `windowsUser` and `windowsGroup` account modules on first pod startup and on later restarts.
+The deployment script generates `.secrets/<env>/lam-password` when missing. Use this value for the LAM configuration/profile login. Use `.secrets/<env>/samba-admin-password` for the Samba `Administrator` account when managing AD users and groups. The LAM profile is seeded for Samba AD with `windowsUser` and `windowsGroup` account modules on first pod startup and on later restarts.
 
 ### Vault
 
@@ -349,7 +349,7 @@ VAULT_ADDR=https://vault.dev.w237.local:8200 vault status -tls-skip-verify
 First-time initialization and unseal are automated by Ansible. The generated unseal keys and initial root token are stored only in an ignored local file, such as:
 
 ```bash
-platform/ansible/.secrets/vault-init-dev.json
+platform/ansible/.secrets/dev/vault-init.json
 ```
 
 Do not commit or share this file. It is required for future automated unseal runs unless you migrate to an auto-unseal backend.

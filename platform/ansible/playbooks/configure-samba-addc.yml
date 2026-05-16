@@ -8,11 +8,12 @@
     samba_netbios_domain: "{{ samba_ad_netbios_domain | upper }}"
     samba_dc_hostname: "{{ inventory_hostname }}"
     samba_dc_short_hostname: "{{ inventory_hostname | regex_replace('^' ~ coredns_environment ~ '-', '') }}"
-    samba_admin_password_file: "{{ lookup('env', 'SAMBA_ADMIN_PASSWORD_FILE') | default(playbook_dir ~ '/../.secrets/samba-admin-password', true) }}"
+    samba_admin_password_file: "{{ lookup('env', 'SAMBA_ADMIN_PASSWORD_FILE') | default(playbook_dir ~ '/../.secrets/' ~ coredns_environment ~ '/samba-admin-password', true) }}"
     samba_admin_password_from_file: "{{ lookup('ansible.builtin.file', samba_admin_password_file, errors='ignore') | trim }}"
     samba_admin_password: "{{ lookup('env', 'SAMBA_ADMIN_PASSWORD') | default(samba_admin_password_from_file, true) }}"
     samba_dns_forwarder: 1.1.1.1
     cloud_init_wait_timeout: 300
+    cloud_init_wait_interval: 10
 
   handlers:
     - name: Restart samba ad dc
@@ -23,9 +24,38 @@
   tasks:
     - name: Wait for cloud-init to finish
       ansible.builtin.shell:
-        cmd: >-
-          timeout {{ cloud_init_wait_timeout }} cloud-init status --wait ||
-          { cloud-init status --long; journalctl -u cloud-init -n 80 --no-pager || true; exit 1; }
+        cmd: |
+          set -u
+          deadline=$((SECONDS + {{ cloud_init_wait_timeout }}))
+
+          while true; do
+            status_output="$(cloud-init status --long 2>&1 || true)"
+            printf '%s\n' "$status_output" | sed -n '1,10p'
+
+            if printf '%s\n' "$status_output" | grep -q '^status: error'; then
+              journalctl -u cloud-init -n 80 --no-pager || true
+              exit 1
+            fi
+
+            if printf '%s\n' "$status_output" | grep -q '^status: done'; then
+              package_processes="$(ps -eo pid=,comm= | awk '$2 ~ /^(apt|apt-get|dpkg|unattended-upgrade)$/ {print $0}')"
+              if [ -z "$package_processes" ]; then
+                echo "cloud-init complete and package managers idle"
+                exit 0
+              fi
+
+              echo "cloud-init complete; waiting for package manager processes:"
+              printf '%s\n' "$package_processes"
+            fi
+
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "Timed out waiting for cloud-init and package managers"
+              journalctl -u cloud-init -n 80 --no-pager || true
+              exit 1
+            fi
+
+            sleep {{ cloud_init_wait_interval }}
+          done
       changed_when: false
 
     - name: Fail when Samba Administrator password is missing

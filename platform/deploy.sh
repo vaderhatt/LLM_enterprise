@@ -18,8 +18,10 @@ ANSIBLE_PUBLIC_KEY_PATH="$ANSIBLE_KEY_PATH.pub"
 ANSIBLE_KNOWN_HOSTS_PATH="$ANSIBLE_KEY_DIR/known_hosts"
 ANSIBLE_INVENTORY_KNOWN_HOSTS_PATH=".ssh/known_hosts"
 ANSIBLE_INVENTORY="inventory/$DEPLOY_ENV.ini"
-SAMBA_ADMIN_PASSWORD_FILE="${SAMBA_ADMIN_PASSWORD_FILE:-$ANSIBLE_DIR/.secrets/samba-admin-password}"
-LAM_PASSWORD_FILE="${LAM_PASSWORD_FILE:-$ANSIBLE_DIR/.secrets/lam-password}"
+ANSIBLE_SECRETS_DIR="${ANSIBLE_SECRETS_DIR:-$ANSIBLE_DIR/.secrets/$DEPLOY_ENV}"
+SAMBA_ADMIN_PASSWORD_FILE="${SAMBA_ADMIN_PASSWORD_FILE:-$ANSIBLE_SECRETS_DIR/samba-admin-password}"
+LAM_PASSWORD_FILE="${LAM_PASSWORD_FILE:-$ANSIBLE_SECRETS_DIR/lam-password}"
+VAULT_INIT_FILE="${VAULT_INIT_FILE:-$ANSIBLE_SECRETS_DIR/vault-init.json}"
 SSH_HOST_KEY_SCAN_ATTEMPTS="${SSH_HOST_KEY_SCAN_ATTEMPTS:-120}"
 SSH_HOST_KEY_SCAN_DELAY="${SSH_HOST_KEY_SCAN_DELAY:-5}"
 
@@ -440,7 +442,7 @@ configure_vault() {
     cd "$ANSIBLE_DIR"
 
     INVENTORY="$ANSIBLE_INVENTORY"
-    ansible-playbook playbooks/configure-vault.yml -i "$INVENTORY" -b
+    VAULT_INIT_FILE="$VAULT_INIT_FILE" ansible-playbook playbooks/configure-vault.yml -i "$INVENTORY" -b
     log_success "Vault server configured"
 }
 
@@ -449,7 +451,7 @@ configure_ad_ui_secret() {
     cd "$ANSIBLE_DIR"
 
     INVENTORY="$ANSIBLE_INVENTORY"
-    ansible-playbook playbooks/configure-ad-ui-secret.yml -i "$INVENTORY"
+    SAMBA_ADMIN_PASSWORD_FILE="$SAMBA_ADMIN_PASSWORD_FILE" LAM_PASSWORD_FILE="$LAM_PASSWORD_FILE" ansible-playbook playbooks/configure-ad-ui-secret.yml -i "$INVENTORY"
     log_success "AD UI secret configured"
 }
 
@@ -506,13 +508,13 @@ main() {
     else
         log_warn "Ansible playbooks skipped"
         log_info "To run manually, use:"
-        log_info "  # Password files are generated automatically in ansible/.secrets by ./deploy.sh"
+        log_info "  # Password files are generated automatically in ansible/.secrets/$DEPLOY_ENV by ./deploy.sh"
         log_info "  ansible-playbook ansible/playbooks/configure-samba-addc.yml -i ansible/$ANSIBLE_INVENTORY -b"
-        log_info "  ansible-playbook ansible/playbooks/configure-vault.yml -i ansible/$ANSIBLE_INVENTORY -b"
+        log_info "  VAULT_INIT_FILE=ansible/.secrets/$DEPLOY_ENV/vault-init.json ansible-playbook ansible/playbooks/configure-vault.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/configure-dns.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/prerequisites.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/deploy-rke2.yml -i ansible/$ANSIBLE_INVENTORY -b"
-        log_info "  ansible-playbook ansible/playbooks/configure-ad-ui-secret.yml -i ansible/$ANSIBLE_INVENTORY"
+        log_info "  SAMBA_ADMIN_PASSWORD_FILE=ansible/.secrets/$DEPLOY_ENV/samba-admin-password LAM_PASSWORD_FILE=ansible/.secrets/$DEPLOY_ENV/lam-password ansible-playbook ansible/playbooks/configure-ad-ui-secret.yml -i ansible/$ANSIBLE_INVENTORY"
         log_info "  ansible-playbook ansible/playbooks/bootstrap-flux.yml -i ansible/$ANSIBLE_INVENTORY"
     fi
 }
