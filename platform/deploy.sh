@@ -19,6 +19,7 @@ ANSIBLE_KNOWN_HOSTS_PATH="$ANSIBLE_KEY_DIR/known_hosts"
 ANSIBLE_INVENTORY_KNOWN_HOSTS_PATH=".ssh/known_hosts"
 ANSIBLE_INVENTORY="inventory/$DEPLOY_ENV.ini"
 SAMBA_ADMIN_PASSWORD_FILE="${SAMBA_ADMIN_PASSWORD_FILE:-$ANSIBLE_DIR/.secrets/samba-admin-password}"
+LAM_PASSWORD_FILE="${LAM_PASSWORD_FILE:-$ANSIBLE_DIR/.secrets/lam-password}"
 SSH_HOST_KEY_SCAN_ATTEMPTS="${SSH_HOST_KEY_SCAN_ATTEMPTS:-120}"
 SSH_HOST_KEY_SCAN_DELAY="${SSH_HOST_KEY_SCAN_DELAY:-5}"
 
@@ -52,6 +53,30 @@ run_as_root() {
     else
         sudo "$@"
     fi
+}
+
+generate_password() {
+    if command -v openssl > /dev/null 2>&1; then
+        openssl rand -base64 24
+    else
+        LC_ALL=C tr -dc 'A-Za-z0-9_@%+=:,.~-' < /dev/urandom | head -c 32
+        printf '\n'
+    fi
+}
+
+ensure_secret_file() {
+    local file_path="$1"
+    local description="$2"
+
+    if [ -s "$file_path" ]; then
+        chmod 600 "$file_path"
+        return 0
+    fi
+
+    install -d -m 700 "$(dirname "$file_path")"
+    generate_password > "$file_path"
+    chmod 600 "$file_path"
+    log_success "Generated $description: $file_path"
 }
 
 package_for_command() {
@@ -174,15 +199,13 @@ check_prerequisites() {
 }
 
 check_sensitive_inputs() {
-    log_info "Checking required local secret inputs..."
+    log_info "Checking local generated secrets..."
 
-    if [ -z "${SAMBA_ADMIN_PASSWORD:-}" ] && [ ! -s "$SAMBA_ADMIN_PASSWORD_FILE" ]; then
-        log_warn "Samba AD Administrator password is required before rollout"
-        log_warn "Set SAMBA_ADMIN_PASSWORD or write it to: $SAMBA_ADMIN_PASSWORD_FILE"
-        return 1
-    fi
+    ensure_secret_file "$SAMBA_ADMIN_PASSWORD_FILE" "Samba AD Administrator password"
+    ensure_secret_file "$LAM_PASSWORD_FILE" "LAM profile password"
 
-    log_success "Required local secret inputs are present"
+    log_success "Required local secrets are present"
+    log_info "Generated secrets are intentionally ignored by git under: $ANSIBLE_DIR/.secrets"
 }
 
 ensure_ansible_system_user() {
@@ -483,9 +506,7 @@ main() {
     else
         log_warn "Ansible playbooks skipped"
         log_info "To run manually, use:"
-        log_info "  install -d -m 700 ansible/.secrets"
-        log_info "  printf '%s\n' '<strong-password>' > ansible/.secrets/samba-admin-password"
-        log_info "  chmod 600 ansible/.secrets/samba-admin-password"
+        log_info "  # Password files are generated automatically in ansible/.secrets by ./deploy.sh"
         log_info "  ansible-playbook ansible/playbooks/configure-samba-addc.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/configure-vault.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/configure-dns.yml -i ansible/$ANSIBLE_INVENTORY -b"

@@ -298,9 +298,6 @@ Configure or refresh Samba AD DC with:
 
 ```bash
 cd platform/ansible
-install -d -m 700 .secrets
-printf '%s\n' '<strong-password>' > .secrets/samba-admin-password
-chmod 600 .secrets/samba-admin-password
 ansible-playbook playbooks/configure-samba-addc.yml -i inventory/dev.ini -b
 ansible-playbook playbooks/configure-dns.yml -i inventory/dev.ini -b
 ```
@@ -312,7 +309,7 @@ dig @10.10.1.10 _ldap._tcp.ad.w237.local SRV
 dig @10.10.1.10 addc1.ad.w237.local
 ```
 
-The password file is used for the Samba `Administrator` account and is intentionally ignored by git. You can override the file path with `SAMBA_ADMIN_PASSWORD_FILE` or override the value for one run with `SAMBA_ADMIN_PASSWORD`.
+The deployment script generates the Samba `Administrator` password when missing and stores it in `.secrets/samba-admin-password`, which is intentionally ignored by git. You can override the file path with `SAMBA_ADMIN_PASSWORD_FILE` or override the value for one run with `SAMBA_ADMIN_PASSWORD`.
 
 ### AD Management UI
 
@@ -329,7 +326,7 @@ The app is exposed at:
 https://ad.dev.w237.local/lam/
 ```
 
-Use the LAM profile password from `.secrets/lam-password` for the LAM configuration/profile login. Use the Samba `Administrator` account password for AD user and group management. The LAM profile is seeded for Samba AD with `windowsUser` and `windowsGroup` account modules on first pod startup and on later restarts.
+The deployment script generates `.secrets/lam-password` when missing. Use this value for the LAM configuration/profile login. Use `.secrets/samba-admin-password` for the Samba `Administrator` account when managing AD users and groups. The LAM profile is seeded for Samba AD with `windowsUser` and `windowsGroup` account modules on first pod startup and on later restarts.
 
 ### Vault
 

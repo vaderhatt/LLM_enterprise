@@ -12,6 +12,7 @@
     samba_admin_password_from_file: "{{ lookup('ansible.builtin.file', samba_admin_password_file, errors='ignore') | trim }}"
     samba_admin_password: "{{ lookup('env', 'SAMBA_ADMIN_PASSWORD') | default(samba_admin_password_from_file, true) }}"
     samba_dns_forwarder: 1.1.1.1
+    cloud_init_wait_timeout: 300
 
   handlers:
     - name: Restart samba ad dc
@@ -20,6 +21,13 @@
         state: restarted
 
   tasks:
+    - name: Wait for cloud-init to finish
+      ansible.builtin.shell:
+        cmd: >-
+          timeout {{ cloud_init_wait_timeout }} cloud-init status --wait ||
+          { cloud-init status --long; journalctl -u cloud-init -n 80 --no-pager || true; exit 1; }
+      changed_when: false
+
     - name: Fail when Samba Administrator password is missing
       ansible.builtin.fail:
         msg: >-
@@ -46,6 +54,7 @@
         state: present
         update_cache: true
         cache_valid_time: 3600
+        lock_timeout: 600
       environment:
         DEBIAN_FRONTEND: noninteractive
 

@@ -17,6 +17,7 @@
     vault_init_file: "{{ lookup('env', 'VAULT_INIT_FILE') | default(playbook_dir ~ '/../.secrets/vault-init-' ~ coredns_environment ~ '.json', true) }}"
     vault_key_shares: 5
     vault_key_threshold: 3
+    cloud_init_wait_timeout: 300
 
   handlers:
     - name: Restart vault
@@ -27,8 +28,10 @@
 
   tasks:
     - name: Wait for cloud-init to finish
-      ansible.builtin.command:
-        cmd: cloud-init status --wait
+      ansible.builtin.shell:
+        cmd: >-
+          timeout {{ cloud_init_wait_timeout }} cloud-init status --wait ||
+          { cloud-init status --long; journalctl -u cloud-init -n 80 --no-pager || true; exit 1; }
       changed_when: false
 
     - name: Install Vault dependencies
