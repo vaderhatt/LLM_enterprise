@@ -1,6 +1,14 @@
+{{ samba_ad_dns_zone }}:53 {
+    errors
+    bind {{ rke2_api_endpoint }}
+    forward . {{ samba_ad_dc_ip }}
+    cache 30
+    reload
+}
+
 .:53 {
     errors
-        bind {{ rke2_api_endpoint }}
+    bind {{ rke2_api_endpoint }}
     health
     ready
     log

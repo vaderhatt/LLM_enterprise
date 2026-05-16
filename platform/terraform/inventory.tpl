@@ -11,6 +11,9 @@ ${node.name} ansible_host=${node.ip_address}
 [${environment}_load_balancer]
 ${load_balancer_node.name} ansible_host=${load_balancer_node.ip_address}
 
+[${environment}_domain_controller]
+${domain_controller_node.name} ansible_host=${domain_controller_node.ip_address}
+
 [controlplane:children]
 ${environment}_controlplane
 
@@ -20,10 +23,14 @@ ${environment}_worker
 [load_balancer:children]
 ${environment}_load_balancer
 
+[domain_controller:children]
+${environment}_domain_controller
+
 [${environment}:children]
 ${environment}_controlplane
 ${environment}_worker
 ${environment}_load_balancer
+${environment}_domain_controller
 
 [rke2_servers:children]
 ${environment}_controlplane
@@ -41,3 +48,8 @@ rke2_api_endpoint=${load_balancer_node.ip_address}
 rke2_api_hostname=${load_balancer_hostname}
 coredns_environment=${environment}
 coredns_domain=${internal_domain}
+samba_ad_realm=${samba_ad_realm}
+samba_ad_dns_zone=${lower(samba_ad_realm)}
+samba_ad_netbios_domain=${samba_ad_netbios_domain}
+samba_ad_dc_ip=${domain_controller_node.ip_address}
+samba_ad_dc_hostname=${domain_controller_node.name}

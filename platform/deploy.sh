@@ -17,6 +17,7 @@ ANSIBLE_PUBLIC_KEY_PATH="$ANSIBLE_KEY_PATH.pub"
 ANSIBLE_KNOWN_HOSTS_PATH="$ANSIBLE_KEY_DIR/known_hosts"
 ANSIBLE_INVENTORY_KNOWN_HOSTS_PATH=".ssh/known_hosts"
 ANSIBLE_INVENTORY="inventory/$DEPLOY_ENV.ini"
+SAMBA_ADMIN_PASSWORD_FILE="${SAMBA_ADMIN_PASSWORD_FILE:-$ANSIBLE_DIR/.secrets/samba-admin-password}"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -186,6 +187,36 @@ configure_dns_service() {
     log_success "CoreDNS service configured"
 }
 
+load_samba_admin_password() {
+    if [ -n "${SAMBA_ADMIN_PASSWORD:-}" ]; then
+        export SAMBA_ADMIN_PASSWORD
+        return 0
+    fi
+
+    if [ -r "$SAMBA_ADMIN_PASSWORD_FILE" ]; then
+        SAMBA_ADMIN_PASSWORD="$(tr -d '\r\n' < "$SAMBA_ADMIN_PASSWORD_FILE")"
+        export SAMBA_ADMIN_PASSWORD
+        return 0
+    fi
+
+    return 1
+}
+
+configure_samba_addc() {
+    log_info "Configuring Samba Active Directory domain controller..."
+    cd "$ANSIBLE_DIR"
+
+    if ! load_samba_admin_password; then
+        log_warn "SAMBA_ADMIN_PASSWORD is required to configure Samba AD DC"
+        log_warn "Set it in the environment or write it to: $SAMBA_ADMIN_PASSWORD_FILE"
+        return 1
+    fi
+
+    INVENTORY="$ANSIBLE_INVENTORY"
+    ansible-playbook playbooks/configure-samba-addc.yml -i "$INVENTORY" -b
+    log_success "Samba AD DC configured"
+}
+
 # Run RKE2 deployment
 run_rke2_deploy() {
     log_info "Running RKE2 deployment playbook..."
@@ -219,6 +250,7 @@ main() {
     test_ssh_connectivity || { log_warn "SSH connectivity test failed. Check network and SSH keys."; exit 1; }
     read -p "Ready to run Ansible playbooks? (yes/no): " -r || REPLY="no"
     if [[ $REPLY == "yes" ]]; then
+        configure_samba_addc || exit 1
         configure_dns_service || exit 1
         run_prerequisites || exit 1
         run_rke2_deploy || exit 1
@@ -234,6 +266,10 @@ main() {
     else
         log_warn "Ansible playbooks skipped"
         log_info "To run manually, use:"
+        log_info "  install -d -m 700 ansible/.secrets"
+        log_info "  printf '%s\n' '<strong-password>' > ansible/.secrets/samba-admin-password"
+        log_info "  chmod 600 ansible/.secrets/samba-admin-password"
+        log_info "  ansible-playbook ansible/playbooks/configure-samba-addc.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/configure-dns.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/prerequisites.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/deploy-rke2.yml -i ansible/$ANSIBLE_INVENTORY -b"

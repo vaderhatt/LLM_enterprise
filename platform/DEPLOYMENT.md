@@ -290,6 +290,30 @@ Test it from the host or a cluster VM:
 dig @10.10.1.10 k8s.dev.w237.local
 ```
 
+### Samba Active Directory
+
+Terraform creates one Samba AD DC VM per environment, such as `dev-addc1` at `10.10.1.30`. The default AD DNS zone is `ad.w237.local`, the Kerberos realm is `AD.W237.LOCAL`, and the NetBIOS domain is `AD`. CoreDNS delegates `ad.w237.local` to the Samba DC so AD records such as Kerberos and LDAP SRV records are resolved by Samba's internal DNS server.
+
+Configure or refresh Samba AD DC with:
+
+```bash
+cd platform/ansible
+install -d -m 700 .secrets
+printf '%s\n' '<strong-password>' > .secrets/samba-admin-password
+chmod 600 .secrets/samba-admin-password
+ansible-playbook playbooks/configure-samba-addc.yml -i inventory/dev.ini -b
+ansible-playbook playbooks/configure-dns.yml -i inventory/dev.ini -b
+```
+
+Verify AD DNS through CoreDNS:
+
+```bash
+dig @10.10.1.10 _ldap._tcp.ad.w237.local SRV
+dig @10.10.1.10 addc1.ad.w237.local
+```
+
+The password file is used for the Samba `Administrator` account and is intentionally ignored by git. You can override the file path with `SAMBA_ADMIN_PASSWORD_FILE` or override the value for one run with `SAMBA_ADMIN_PASSWORD`.
+
 ### Ansible Playbook Issues
 
 Check prerequisites playbook logs:

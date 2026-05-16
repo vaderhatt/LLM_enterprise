@@ -10,6 +10,7 @@ platform/ansible/inventory/stage.ini
 platform/ansible/inventory/prod.ini
 platform/ansible/inventory/all.ini
 platform/ansible/.ssh/
+platform/ansible/.secrets/
 platform/ansible/kubeconfig
 platform/ansible/playbooks/kubeconfig
 platform/terraform/.terraform.lock.hcl

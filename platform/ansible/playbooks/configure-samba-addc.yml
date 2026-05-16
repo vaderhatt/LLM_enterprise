@@ -1,0 +1,159 @@
+---
+- name: Configure Samba Active Directory domain controller
+  hosts: domain_controller
+  become: true
+  vars:
+    samba_realm: "{{ samba_ad_realm | upper }}"
+    samba_dns_zone: "{{ samba_ad_dns_zone | lower }}"
+    samba_netbios_domain: "{{ samba_ad_netbios_domain | upper }}"
+    samba_dc_hostname: "{{ inventory_hostname }}"
+    samba_dc_short_hostname: "{{ inventory_hostname | regex_replace('^' ~ coredns_environment ~ '-', '') }}"
+    samba_admin_password_file: "{{ lookup('env', 'SAMBA_ADMIN_PASSWORD_FILE') | default(playbook_dir ~ '/../.secrets/samba-admin-password', true) }}"
+    samba_admin_password_from_file: "{{ lookup('ansible.builtin.file', samba_admin_password_file, errors='ignore') | trim }}"
+    samba_admin_password: "{{ lookup('env', 'SAMBA_ADMIN_PASSWORD') | default(samba_admin_password_from_file, true) }}"
+    samba_dns_forwarder: 1.1.1.1
+
+  handlers:
+    - name: Restart samba ad dc
+      ansible.builtin.systemd:
+        name: samba-ad-dc
+        state: restarted
+
+  tasks:
+    - name: Fail when Samba Administrator password is missing
+      ansible.builtin.fail:
+        msg: >-
+          Set SAMBA_ADMIN_PASSWORD in the environment before running this playbook.
+          Alternatively, write the password to {{ samba_admin_password_file }}.
+          The password is used for the Samba AD Administrator account and is not stored in git.
+      when: samba_admin_password | length == 0
+
+    - name: Install Samba AD DC packages
+      ansible.builtin.apt:
+        name:
+          - acl
+          - attr
+          - dnsutils
+          - krb5-user
+          - net-tools
+          - samba
+          - samba-ad-dc
+          - samba-ad-provision
+          - samba-dsdb-modules
+          - smbclient
+          - winbind
+          - python3-setproctitle
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: Set domain controller hostname
+      ansible.builtin.hostname:
+        name: "{{ samba_dc_short_hostname }}"
+
+    - name: Add domain controller hosts entry
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: "^{{ ansible_host }}\\s+"
+        line: "{{ ansible_host }} {{ samba_dc_short_hostname }}.{{ samba_dns_zone }} {{ samba_dc_short_hostname }}"
+        state: present
+
+    - name: Disable systemd-resolved on domain controller
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: stopped
+        enabled: false
+      failed_when: false
+      notify: Restart samba ad dc
+
+    - name: Point resolver at Samba internal DNS
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          search {{ samba_dns_zone }}
+          nameserver 127.0.0.1
+          nameserver {{ samba_dns_forwarder }}
+      notify: Restart samba ad dc
+
+    - name: Stop member-server Samba services before provisioning
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      failed_when: false
+      loop:
+        - smbd
+        - nmbd
+        - winbind
+
+    - name: Check whether Samba domain is already provisioned
+      ansible.builtin.stat:
+        path: /var/lib/samba/private/sam.ldb
+      register: samba_domain_db
+
+    - name: Move package smb.conf before first provision
+      ansible.builtin.command:
+        cmd: mv /etc/samba/smb.conf /etc/samba/smb.conf.package
+        creates: /etc/samba/smb.conf.package
+      failed_when: false
+      when: not samba_domain_db.stat.exists
+
+    - name: Remove partial Samba private databases before first provision
+      ansible.builtin.file:
+        path: "/var/lib/samba/private/{{ item }}"
+        state: absent
+      loop:
+        - netlogon_creds_cli.tdb
+        - passdb.tdb
+        - secrets.ldb
+        - secrets.tdb
+      when: not samba_domain_db.stat.exists
+
+    - name: Provision Samba AD domain
+      ansible.builtin.command:
+        argv:
+          - samba-tool
+          - domain
+          - provision
+          - "--server-role=dc"
+          - "--use-rfc2307"
+          - "--dns-backend=SAMBA_INTERNAL"
+          - "--realm={{ samba_realm }}"
+          - "--domain={{ samba_netbios_domain }}"
+          - "--adminpass={{ samba_admin_password }}"
+          - "--host-ip={{ ansible_host }}"
+          - "--option=dns forwarder = {{ samba_dns_forwarder }}"
+      args:
+        creates: /var/lib/samba/private/sam.ldb
+      no_log: true
+      notify: Restart samba ad dc
+
+    - name: Write Kerberos client config
+      ansible.builtin.template:
+        src: ../templates/krb5.conf.j2
+        dest: /etc/krb5.conf
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable and start Samba AD DC service
+      ansible.builtin.systemd:
+        name: samba-ad-dc
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Verify Samba AD domain info
+      ansible.builtin.command:
+        cmd: samba-tool domain info 127.0.0.1
+      register: samba_domain_info
+      changed_when: false
+
+    - name: Show Samba AD domain summary
+      ansible.builtin.debug:
+        msg: "{{ samba_domain_info.stdout_lines }}"
