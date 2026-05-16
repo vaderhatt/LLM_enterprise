@@ -217,6 +217,15 @@ configure_samba_addc() {
     log_success "Samba AD DC configured"
 }
 
+configure_ad_ui_secret() {
+    log_info "Configuring AD UI Kubernetes secret..."
+    cd "$ANSIBLE_DIR"
+
+    INVENTORY="$ANSIBLE_INVENTORY"
+    ansible-playbook playbooks/configure-ad-ui-secret.yml -i "$INVENTORY"
+    log_success "AD UI secret configured"
+}
+
 # Run RKE2 deployment
 run_rke2_deploy() {
     log_info "Running RKE2 deployment playbook..."
@@ -254,6 +263,7 @@ main() {
         configure_dns_service || exit 1
         run_prerequisites || exit 1
         run_rke2_deploy || exit 1
+        configure_ad_ui_secret || exit 1
         read -p "Ready to bootstrap Flux GitOps? (yes/no): " -r || REPLY="no"
         if [[ $REPLY == "yes" ]]; then
             bootstrap_flux || exit 1
@@ -273,6 +283,7 @@ main() {
         log_info "  ansible-playbook ansible/playbooks/configure-dns.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/prerequisites.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/deploy-rke2.yml -i ansible/$ANSIBLE_INVENTORY -b"
+        log_info "  ansible-playbook ansible/playbooks/configure-ad-ui-secret.yml -i ansible/$ANSIBLE_INVENTORY"
         log_info "  ansible-playbook ansible/playbooks/bootstrap-flux.yml -i ansible/$ANSIBLE_INVENTORY"
     fi
 }

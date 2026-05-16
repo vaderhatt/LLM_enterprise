@@ -314,6 +314,23 @@ dig @10.10.1.10 addc1.ad.w237.local
 
 The password file is used for the Samba `Administrator` account and is intentionally ignored by git. You can override the file path with `SAMBA_ADMIN_PASSWORD_FILE` or override the value for one run with `SAMBA_ADMIN_PASSWORD`.
 
+### AD Management UI
+
+LDAP Account Manager runs as the `ad-ui` app and stores its profile configuration in the `lam-config` PVC. The app expects the `ad-ui/ad-ui-secrets` Kubernetes Secret, created from local ignored password files:
+
+```bash
+cd platform/ansible
+ansible-playbook playbooks/configure-ad-ui-secret.yml -i inventory/dev.ini
+```
+
+The app is exposed at:
+
+```text
+https://ad.dev.w237.local/lam/
+```
+
+Use the LAM profile password from `.secrets/lam-password` for the LAM configuration/profile login. Use the Samba `Administrator` account password for AD user and group management. The LAM profile is seeded for Samba AD with `windowsUser` and `windowsGroup` account modules on first pod startup and on later restarts.
+
 ### Ansible Playbook Issues
 
 Check prerequisites playbook logs:

@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ad-ui
+  namespace: ad-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ad-ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ad-ui
+    spec:
+      automountServiceAccountToken: false
+      initContainers:
+        - name: seed-lam-config
+          image: ldapaccountmanager/lam:stable
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              cp -an /var/lib/ldap-account-manager/config/. /config-pvc/
+              LAM_PASSWORD_SSHA="$(php -r '$password = trim(file_get_contents("/etc/lam-secrets/lam-password")); $rand = abs(hexdec(bin2hex(openssl_random_pseudo_bytes(5)))); $salt0 = substr(pack("h*", md5($rand)), 0, 8); $salt = substr(pack("H*", sha1($salt0 . $password)), 0, 4); print "{SSHA}" . base64_encode(pack("H*", sha1($password . $salt))) . " " . base64_encode($salt) . "\n";')"
+              sed -i \
+                -e 's|^ServerURL:.*|ServerURL: ldaps://10.10.1.30:636|' \
+                -e 's|^Admins:.*|Admins: CN=Administrator,CN=Users,DC=ad,DC=w237,DC=local|' \
+                -e "s|^Passwd:.*|Passwd: ${LAM_PASSWORD_SSHA}|" \
+                -e 's|^tools: treeViewSuffix:.*|tools: treeViewSuffix: DC=ad,DC=w237,DC=local|' \
+                -e 's|^activeTypes:.*|activeTypes: user,group,host|' \
+                -e 's|^types: suffix_user:.*|types: suffix_user: CN=Users,DC=ad,DC=w237,DC=local|' \
+                -e 's|^types: attr_user:.*|types: attr_user: #cn;#givenName;#sn;#mail|' \
+                -e 's|^types: modules_user:.*|types: modules_user: windowsUser|' \
+                -e 's|^types: suffix_group:.*|types: suffix_group: CN=Users,DC=ad,DC=w237,DC=local|' \
+                -e 's|^types: attr_group:.*|types: attr_group: #cn;#member;#description|' \
+                -e 's|^types: modules_group:.*|types: modules_group: windowsGroup|' \
+                -e 's|^types: suffix_host:.*|types: suffix_host: CN=Computers,DC=ad,DC=w237,DC=local|' \
+                -e 's|^types: attr_host:.*|types: attr_host: #cn;#description;#location|' \
+                -e 's|^types: modules_host:.*|types: modules_host: windowsHost|' \
+                -e 's|^types: suffix_smbDomain:.*|types: suffix_smbDomain: DC=ad,DC=w237,DC=local|' \
+                -e 's|^types: modules_smbDomain:.*|types: modules_smbDomain: sambaDomain|' \
+                -e 's|^modules: windowsUser_domains:.*|modules: windowsUser_domains: ad.w237.local|' \
+                /config-pvc/lam.conf
+          volumeMounts:
+            - name: config
+              mountPath: /config-pvc
+            - name: secrets
+              mountPath: /etc/lam-secrets
+              readOnly: true
+      containers:
+        - name: lam
+          image: ldapaccountmanager/lam:stable
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          env:
+            - name: LAM_SKIP_PRECONFIGURE
+              value: "true"
+            - name: LAM_PASSWORD_FILE
+              value: /etc/lam-secrets/lam-password
+            - name: LDAP_DOMAIN
+              value: ad.w237.local
+            - name: LDAP_BASE_DN
+              value: DC=ad,DC=w237,DC=local
+            - name: LDAP_USERS_DN
+              value: CN=Users,DC=ad,DC=w237,DC=local
+            - name: LDAP_GROUPS_DN
+              value: CN=Users,DC=ad,DC=w237,DC=local
+            - name: LDAP_SERVER
+              value: ldaps://10.10.1.30:636
+            - name: LDAP_USER_FILE
+              value: /etc/lam-secrets/ldap-user
+            - name: LDAP_PASSWORD_FILE
+              value: /etc/lam-secrets/ldap-password
+            - name: LAM_LANG
+              value: en_US
+            - name: LAM_DISABLE_TLS_CHECK
+              value: "true"
+            - name: LDAPTLS_REQCERT
+              value: never
+          volumeMounts:
+            - name: config
+              mountPath: /var/lib/ldap-account-manager/config
+            - name: secrets
+              mountPath: /etc/lam-secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: lam-config
+        - name: secrets
+          secret:
+            secretName: ad-ui-secrets
+            defaultMode: 0400
