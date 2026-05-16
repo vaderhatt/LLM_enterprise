@@ -1,6 +1,6 @@
 ---
 - name: Install prerequisites for RKE2 on Ubuntu Server
-  hosts: all
+  hosts: rke2_cluster
   become: yes
   tasks:
     - name: Update package database

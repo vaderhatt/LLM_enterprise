@@ -8,15 +8,22 @@ ${node.name} ansible_host=${node.ip_address}
 ${node.name} ansible_host=${node.ip_address}
 %{ endfor ~}
 
+[${environment}_load_balancer]
+${load_balancer_node.name} ansible_host=${load_balancer_node.ip_address}
+
 [controlplane:children]
 ${environment}_controlplane
 
 [worker:children]
 ${environment}_worker
 
+[load_balancer:children]
+${environment}_load_balancer
+
 [${environment}:children]
 ${environment}_controlplane
 ${environment}_worker
+${environment}_load_balancer
 
 [rke2_servers:children]
 ${environment}_controlplane
@@ -30,3 +37,7 @@ rke2_agents
 
 [all:vars]
 ansible_python_interpreter=/usr/bin/python3
+rke2_api_endpoint=${load_balancer_node.ip_address}
+rke2_api_hostname=${load_balancer_hostname}
+coredns_environment=${environment}
+coredns_domain=${internal_domain}

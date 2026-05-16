@@ -74,6 +74,25 @@ variable "worker_vm" {
   }
 }
 
+variable "load_balancer_vm" {
+  description = "Sizing for the HAProxy load-balancer VM"
+  type = object({
+    cpus         = number
+    memory_mib   = number
+    disk_size_gb = number
+  })
+  default = {
+    cpus         = 1
+    memory_mib   = 1024
+    disk_size_gb = 10
+  }
+
+  validation {
+    condition     = var.load_balancer_vm.cpus > 0 && var.load_balancer_vm.memory_mib >= 512 && var.load_balancer_vm.disk_size_gb > 0
+    error_message = "load_balancer_vm must use positive CPU and disk values, and at least 512 MiB memory."
+  }
+}
+
 variable "network_name" {
   description = "Libvirt network name for the RKE2 VMs"
   type        = string
@@ -104,6 +123,39 @@ variable "network_gateway" {
   validation {
     condition     = can(cidrhost("${var.network_gateway}/32", 0))
     error_message = "network_gateway must be a valid IPv4 address."
+  }
+}
+
+variable "load_balancer_ip" {
+  description = "Static IP for the cluster HAProxy load balancer. Defaults to host .10 in network_cidr."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.load_balancer_ip == null ? true : can(cidrhost("${var.load_balancer_ip}/32", 0))
+    error_message = "load_balancer_ip must be a valid IPv4 address."
+  }
+}
+
+variable "internal_domain" {
+  description = "Internal DNS domain used for generated cluster endpoints"
+  type        = string
+  default     = "w237.local"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9.-]+$", var.internal_domain)) && length(trimspace(var.internal_domain)) > 0
+    error_message = "internal_domain must contain only letters, numbers, dots, and hyphens."
+  }
+}
+
+variable "load_balancer_hostname" {
+  description = "DNS name for the cluster load balancer. Defaults to lb.<environment>.<internal_domain>."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.load_balancer_hostname == null ? true : can(regex("^[A-Za-z0-9.-]+$", var.load_balancer_hostname))
+    error_message = "load_balancer_hostname must contain only letters, numbers, dots, and hyphens."
   }
 }
 

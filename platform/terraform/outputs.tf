@@ -18,6 +18,15 @@ output "worker_nodes" {
   }
 }
 
+output "load_balancer_node" {
+  description = "Cluster load balancer node details"
+  value = {
+    ip       = module.load_balancer.ip_address
+    name     = module.load_balancer.name
+    hostname = local.load_balancer_hostname
+  }
+}
+
 output "ansible_inventory_path" {
   description = "Path to generated Ansible inventory file"
   value       = "ansible/inventory/${var.environment}.ini"

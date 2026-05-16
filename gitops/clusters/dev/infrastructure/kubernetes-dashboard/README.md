@@ -7,18 +7,10 @@ This component expects:
 - `ingress-nginx` from `gitops/infrastructure/ingress-or-gateway`
 - cert-manager and the `selfsigned` ClusterIssuer from `gitops/infrastructure/cert-manager`
 
-Default base host, before environment overlays:
-
-```text
-k8s.example.local
-```
-
-Environment overlays set the live hostnames:
+Dashboard host:
 
 ```text
 k8s.dev.w237.local
-k8s.stage.w237.local
-k8s.prod.w237.local
 ```
 
 Point the relevant hostname to `worker1` with DNS or `/etc/hosts`.

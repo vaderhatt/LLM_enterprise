@@ -177,6 +177,15 @@ run_prerequisites() {
     log_success "Prerequisites playbook completed"
 }
 
+configure_dns_service() {
+    log_info "Configuring CoreDNS service on the load balancer..."
+    cd "$ANSIBLE_DIR"
+
+    INVENTORY="$ANSIBLE_INVENTORY"
+    ansible-playbook playbooks/configure-dns.yml -i "$INVENTORY" -b
+    log_success "CoreDNS service configured"
+}
+
 # Run RKE2 deployment
 run_rke2_deploy() {
     log_info "Running RKE2 deployment playbook..."
@@ -210,6 +219,7 @@ main() {
     test_ssh_connectivity || { log_warn "SSH connectivity test failed. Check network and SSH keys."; exit 1; }
     read -p "Ready to run Ansible playbooks? (yes/no): " -r || REPLY="no"
     if [[ $REPLY == "yes" ]]; then
+        configure_dns_service || exit 1
         run_prerequisites || exit 1
         run_rke2_deploy || exit 1
         read -p "Ready to bootstrap Flux GitOps? (yes/no): " -r || REPLY="no"
@@ -224,6 +234,7 @@ main() {
     else
         log_warn "Ansible playbooks skipped"
         log_info "To run manually, use:"
+        log_info "  ansible-playbook ansible/playbooks/configure-dns.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/prerequisites.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/deploy-rke2.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/bootstrap-flux.yml -i ansible/$ANSIBLE_INVENTORY"

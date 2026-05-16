@@ -13,9 +13,10 @@ resource "libvirt_cloudinit_disk" "init" {
 }
 
 resource "libvirt_domain" "vm" {
-  name   = var.name
-  memory = var.vm.memory_mib
-  vcpu   = var.vm.cpus
+  name      = var.name
+  memory    = var.vm.memory_mib
+  vcpu      = var.vm.cpus
+  autostart = true
 
   disk {
     volume_id = libvirt_volume.vm.id

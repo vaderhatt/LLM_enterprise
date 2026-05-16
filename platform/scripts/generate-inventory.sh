@@ -58,6 +58,13 @@ echo "Generated Ansible inventory: $inventory_path"
                 in_section && /^\[/ { in_section = 0 }
                 in_section && NF { print }
             ' "$env_inventory_path"
+
+            printf '\n[%s_load_balancer]\n' "$env"
+            awk -v section="[${env}_load_balancer]" '
+                $0 == section { in_section = 1; next }
+                in_section && /^\[/ { in_section = 0 }
+                in_section && NF { print }
+            ' "$env_inventory_path"
         fi
     done
 
@@ -71,6 +78,7 @@ echo "Generated Ansible inventory: $inventory_path"
             printf '\n[%s:children]\n' "$env"
             printf '%s_controlplane\n' "$env"
             printf '%s_worker\n' "$env"
+            printf '%s_load_balancer\n' "$env"
         fi
     done
 
@@ -82,6 +90,11 @@ echo "Generated Ansible inventory: $inventory_path"
     printf '\n[worker:children]\n'
     for env in dev stage prod; do
         [[ -f "$inventory_dir/$env.ini" ]] && printf '%s_worker\n' "$env"
+    done
+
+    printf '\n[load_balancer:children]\n'
+    for env in dev stage prod; do
+        [[ -f "$inventory_dir/$env.ini" ]] && printf '%s_load_balancer\n' "$env"
     done
 
     printf '\n[all:vars]\n'

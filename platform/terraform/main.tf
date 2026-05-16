@@ -27,6 +27,11 @@ locals {
   storage_pool_name = "${local.env_prefix}${var.storage_pool}"
   storage_pool_path = "${local.data_dir}/VM/${local.storage_pool_name}"
   ubuntu_image_path = coalesce(var.ubuntu_image_path, "${local.data_dir}/img/ubuntu-26.04-server-cloudimg-amd64.img")
+  load_balancer_ip  = coalesce(var.load_balancer_ip, cidrhost(var.network_cidr, 10))
+  load_balancer_hostname = coalesce(
+    var.load_balancer_hostname,
+    var.environment != "" ? "lb.${var.environment}.${var.internal_domain}" : "lb.${var.internal_domain}"
+  )
 }
 
 resource "null_resource" "storage_pool_directory" {
@@ -81,12 +86,20 @@ locals {
       ip = var.worker_ips[idx]
     }
   }
+
+  load_balancer_haproxy_config = templatefile("${path.module}/haproxy.cfg.tpl", {
+    control_plane_nodes = local.control_plane_nodes
+    ingress_nodes       = { worker1 = local.worker_nodes["worker1"] }
+  })
+
+  load_balancer_haproxy_config_indented = "      ${replace(chomp(local.load_balancer_haproxy_config), "\n", "\n      ")}"
 }
 
 resource "libvirt_network" "rke2_net" {
   name      = "${local.env_prefix}${var.network_name}"
   mode      = "nat"
   addresses = [var.network_cidr]
+  autostart = true
 
   dhcp {
     enabled = false
@@ -113,6 +126,26 @@ module "control_plane" {
   network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = each.value.ip, network_gateway = var.network_gateway })
 }
 
+module "load_balancer" {
+  source = "./modules/node"
+
+  depends_on = [null_resource.storage_pool_active]
+
+  name                        = "${local.env_prefix}lb"
+  ip_address                  = local.load_balancer_ip
+  ubuntu_image_base_volume_id = libvirt_volume.ubuntu_base.id
+  vm                          = var.load_balancer_vm
+  network_id                  = libvirt_network.rke2_net.id
+  storage_pool                = local.storage_pool_name
+  user_data = templatefile("${path.module}/load_balancer_cloud_init.cfg", {
+    hostname       = "lb"
+    ansible_user   = var.ansible_user
+    ssh_public_key = var.ssh_public_key
+    haproxy_config = local.load_balancer_haproxy_config_indented
+  })
+  network_config = templatefile("${path.module}/network_config.cfg", { ip_address = local.load_balancer_ip, network_gateway = var.network_gateway })
+}
+
 module "worker" {
   source   = "./modules/node"
   for_each = local.worker_nodes
@@ -132,8 +165,11 @@ module "worker" {
 # Generate Ansible inventory from infrastructure
 locals {
   ansible_inventory = templatefile("${path.module}/inventory.tpl", {
-    environment         = var.environment
-    control_plane_nodes = module.control_plane
-    worker_nodes        = module.worker
+    environment            = var.environment
+    control_plane_nodes    = module.control_plane
+    worker_nodes           = module.worker
+    load_balancer_node     = module.load_balancer
+    load_balancer_hostname = local.load_balancer_hostname
+    internal_domain        = var.internal_domain
   })
 }

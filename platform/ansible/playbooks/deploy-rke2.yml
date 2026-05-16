@@ -1,11 +1,15 @@
 ---
 - name: Deploy RKE2 cluster
-  hosts: all
+  hosts: rke2_cluster
   become: true
   vars:
+    rke2_kubernetes_api_server_host: "{{ rke2_api_endpoint | default(hostvars[groups['rke2_servers'][0]].ansible_host) }}"
     cluster_rke2_config:
       disable:
         - rke2-ingress-nginx
+      tls-san:
+        - "{{ rke2_api_endpoint | default(hostvars[groups['rke2_servers'][0]].ansible_host) }}"
+        - "{{ rke2_api_hostname | default('') }}"
   roles:
     - role: rke2
 
@@ -21,3 +25,12 @@
         dest: ./kubeconfig
         flat: yes
       when: inventory_hostname in groups['rke2_servers'][0]
+
+    - name: Point fetched kubeconfig at load balancer
+      ansible.builtin.replace:
+        path: "{{ playbook_dir }}/kubeconfig"
+        regexp: 'server: https://127\.0\.0\.1:6443'
+        replace: "server: https://{{ rke2_kubernetes_api_server_host }}:6443"
+      delegate_to: localhost
+      become: false
+      run_once: true

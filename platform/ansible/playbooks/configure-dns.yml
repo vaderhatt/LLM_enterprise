@@ -1,0 +1,96 @@
+---
+- name: Configure CoreDNS service
+  hosts: load_balancer
+  become: true
+  vars:
+    coredns_version: "1.12.4"
+    coredns_archive: "coredns_{{ coredns_version }}_linux_amd64.tgz"
+    coredns_download_url: "https://github.com/coredns/coredns/releases/download/v{{ coredns_version }}/{{ coredns_archive }}"
+    coredns_install_dir: /usr/local/bin
+    coredns_config_dir: /etc/coredns
+    coredns_user: coredns
+    coredns_upstream_servers:
+      - 1.1.1.1
+      - 8.8.8.8
+
+  handlers:
+    - name: Restart coredns
+      ansible.builtin.systemd:
+        name: coredns
+        state: restarted
+        daemon_reload: true
+
+  tasks:
+    - name: Install CoreDNS dependencies
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - tar
+          - net-tools
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create CoreDNS system user
+      ansible.builtin.user:
+        name: "{{ coredns_user }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: /nonexistent
+        create_home: false
+
+    - name: Create CoreDNS config directory
+      ansible.builtin.file:
+        path: "{{ coredns_config_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Download CoreDNS release archive
+      ansible.builtin.get_url:
+        url: "{{ coredns_download_url }}"
+        dest: "/tmp/{{ coredns_archive }}"
+        mode: "0644"
+
+    - name: Extract CoreDNS binary
+      ansible.builtin.unarchive:
+        src: "/tmp/{{ coredns_archive }}"
+        dest: /tmp
+        remote_src: true
+        creates: /tmp/coredns
+
+    - name: Install CoreDNS binary
+      ansible.builtin.copy:
+        src: /tmp/coredns
+        dest: "{{ coredns_install_dir }}/coredns"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart coredns
+
+    - name: Write CoreDNS Corefile
+      ansible.builtin.template:
+        src: ../templates/Corefile.j2
+        dest: "{{ coredns_config_dir }}/Corefile"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart coredns
+
+    - name: Write CoreDNS systemd unit
+      ansible.builtin.template:
+        src: ../templates/coredns.service.j2
+        dest: /etc/systemd/system/coredns.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart coredns
+
+    - name: Enable and start CoreDNS
+      ansible.builtin.systemd:
+        name: coredns
+        enabled: true
+        state: started
+        daemon_reload: true

@@ -247,6 +247,49 @@ sudo systemctl start libvirtd
 
 The RKE2 bundled ingress controller is disabled in [ansible/playbooks/deploy-rke2.yml](ansible/playbooks/deploy-rke2.yml). Ingress is managed by Flux from [../gitops/infrastructure/ingress-or-gateway](../gitops/infrastructure/ingress-or-gateway), including host ports 80 and 443.
 
+### Cluster Load Balancer
+
+Terraform creates one HAProxy load-balancer VM per environment, such as `dev-lb` at `10.10.1.10` with DNS name `lb.dev.w237.local`. The load balancer forwards RKE2 API traffic on `6443` and registration traffic on `9345` to all control-plane nodes. It also forwards ingress traffic on `80` and `443` to the current ingress node, `worker1`.
+
+After applying Terraform, regenerate inventory through the Terragrunt after-hook or with:
+
+```bash
+cd platform/terragrunt/dev
+terragrunt apply
+```
+
+Point cluster API clients at `https://lb.dev.w237.local:6443` or `https://10.10.1.10:6443`. Point application DNS records such as `k8s.dev.w237.local` at the same load-balancer IP.
+
+### Internal DNS
+
+CoreDNS runs on the load-balancer VM and listens on TCP/UDP port `53`, for example `10.10.1.10` in dev. It serves environment records under `w237.local` and forwards everything else to public upstream resolvers.
+
+Configure or refresh it with:
+
+```bash
+cd platform/ansible
+ansible-playbook playbooks/configure-dns.yml -i inventory/dev.ini -b
+```
+
+Useful dev records include:
+
+```text
+lb.dev.w237.local      10.10.1.10
+k8s.dev.w237.local     10.10.1.10
+cp1.dev.w237.local     10.10.1.11
+cp2.dev.w237.local     10.10.1.12
+cp3.dev.w237.local     10.10.1.13
+worker1.dev.w237.local 10.10.1.21
+worker2.dev.w237.local 10.10.1.22
+worker3.dev.w237.local 10.10.1.23
+```
+
+Test it from the host or a cluster VM:
+
+```bash
+dig @10.10.1.10 k8s.dev.w237.local
+```
+
 ### Ansible Playbook Issues
 
 Check prerequisites playbook logs:
