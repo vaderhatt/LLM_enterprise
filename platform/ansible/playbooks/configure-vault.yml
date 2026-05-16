@@ -32,7 +32,7 @@
       ansible.builtin.shell:
         cmd: |
           set -u
-          deadline=$((SECONDS + {{ cloud_init_wait_timeout }}))
+          deadline=$(($(date +%s) + {{ cloud_init_wait_timeout }}))
 
           while true; do
             status_output="$(cloud-init status --long 2>&1 || true)"
@@ -54,7 +54,8 @@
               printf '%s\n' "$package_processes"
             fi
 
-            if [ "$SECONDS" -ge "$deadline" ]; then
+            now=$(date +%s)
+            if [ "$now" -ge "$deadline" ]; then
               echo "Timed out waiting for cloud-init and package managers"
               journalctl -u cloud-init -n 80 --no-pager || true
               exit 1
