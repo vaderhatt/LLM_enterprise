@@ -9,5 +9,5 @@ The controller is pinned to `worker1` and uses host ports 80 and 443, so service
 Validate before applying:
 
 ```bash
-kubectl kustomize gitops/infrastructure/ingress-or-gateway
+kubectl kustomize gitops/clusters/dev/infrastructure/ingress
 ```

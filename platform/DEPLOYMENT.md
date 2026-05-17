@@ -245,7 +245,7 @@ sudo systemctl start libvirtd
 
 ### Ingress Ownership
 
-The RKE2 bundled ingress controller is disabled in [ansible/playbooks/deploy-rke2.yml](ansible/playbooks/deploy-rke2.yml). Ingress is managed by Flux from [../gitops/infrastructure/ingress-or-gateway](../gitops/infrastructure/ingress-or-gateway), including host ports 80 and 443.
+The RKE2 bundled ingress controller is disabled in [ansible/playbooks/deploy-rke2.yml](ansible/playbooks/deploy-rke2.yml). Ingress is managed by Flux from [../gitops/clusters/dev/infrastructure/ingress](../gitops/clusters/dev/infrastructure/ingress), including host ports 80 and 443.
 
 ### Cluster Load Balancer
 
@@ -392,13 +392,13 @@ kubectl -n flux-system get gitrepositories,kustomizations
 
 ### Kubernetes Dashboard
 
-Kubernetes Dashboard is managed by Flux from [../gitops/infrastructure/kubernetes-dashboard](../gitops/infrastructure/kubernetes-dashboard). It uses the Flux-managed `nginx` ingress class from [../gitops/infrastructure/ingress-or-gateway](../gitops/infrastructure/ingress-or-gateway) and cert-manager from [../gitops/infrastructure/cert-manager](../gitops/infrastructure/cert-manager).
+Kubernetes Dashboard is managed by Flux from [../gitops/clusters/dev/infrastructure/kubernetes-dashboard](../gitops/clusters/dev/infrastructure/kubernetes-dashboard). It uses the Flux-managed `nginx` ingress class from [../gitops/clusters/dev/infrastructure/ingress](../gitops/clusters/dev/infrastructure/ingress) and cert-manager from [../gitops/clusters/dev/infrastructure/cert-manager](../gitops/clusters/dev/infrastructure/cert-manager).
 
 When Flux is not bootstrapped yet, apply the dependencies and dashboard manually from the repository root:
 
 ```bash
 kubectl apply -k gitops/infrastructure/cert-manager
-kubectl apply -k gitops/infrastructure/ingress-or-gateway
+kubectl apply -k gitops/clusters/dev/infrastructure/ingress
 kubectl apply -k gitops/infrastructure/kubernetes-dashboard
 ```
 

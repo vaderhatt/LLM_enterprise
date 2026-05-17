@@ -4,7 +4,7 @@ Kubernetes Dashboard managed by Flux/Kustomize.
 
 This component expects:
 
-- `ingress-nginx` from `gitops/infrastructure/ingress-or-gateway`
+- `ingress-nginx` from `gitops/clusters/prod/infrastructure/ingress`
 - cert-manager and the `selfsigned` ClusterIssuer from `gitops/infrastructure/cert-manager`
 
 Dashboard host:

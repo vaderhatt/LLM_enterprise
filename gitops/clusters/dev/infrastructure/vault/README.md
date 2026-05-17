@@ -1,4 +1,4 @@
-# vault-or-openbao
+# vault
 
 Vault is deployed outside the cluster by Ansible. This directory contains the
 External Secrets store that points workloads at the environment Vault instance.

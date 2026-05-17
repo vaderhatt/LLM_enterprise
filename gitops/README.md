@@ -12,7 +12,7 @@ Each environment entrypoint has its own `infrastructure` overlay. Shared infrast
 
 Key platform infrastructure components currently include:
 
-- `infrastructure/ingress-or-gateway` for Flux-managed ingress-nginx
+- `infrastructure/ingress` for Flux-managed ingress-nginx
 - `infrastructure/cert-manager` for certificate automation and the lab `selfsigned` issuer
 - `infrastructure/kubernetes-dashboard` for Dashboard, ingress, and access token resources
 
