@@ -4,7 +4,11 @@
   become: true
   vars:
     rke2_kubernetes_api_server_host: "{{ rke2_api_endpoint | default(hostvars[groups['rke2_servers'][0]].ansible_host) }}"
+    rke2_manifest_config_directory: "{{ playbook_dir }}/rke2-manifests/pre"
     cluster_rke2_config:
+      cni:
+        - cilium
+      disable-kube-proxy: true
       disable-cloud-controller: true
       disable:
         - rke2-ingress-nginx
@@ -15,6 +19,33 @@
     - role: rke2
 
   post_tasks:
+    - name: Remove stale Canal CNI config files after Cilium migration
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/cni/net.d/10-canal.conflist
+        - /etc/cni/net.d/calico-kubeconfig
+      when: "'cilium' in (cluster_rke2_config.cni | default([]))"
+
+    - name: Remove stale Canal host interfaces after Cilium migration
+      ansible.builtin.shell: |
+        set -euo pipefail
+        removed=0
+        if ip link show flannel.1 > /dev/null 2>&1; then
+          ip link delete flannel.1
+          removed=1
+        fi
+        for iface in $(ip -o link show | awk -F': ' '/^[0-9]+: cali/ {print $2}' | cut -d@ -f1); do
+          ip link delete "$iface" || true
+          removed=1
+        done
+        exit "$removed"
+      register: stale_canal_interfaces
+      changed_when: stale_canal_interfaces.rc == 1
+      failed_when: stale_canal_interfaces.rc not in [0, 1]
+      when: "'cilium' in (cluster_rke2_config.cni | default([]))"
+
     - name: Wait for cluster to be ready
       ansible.builtin.pause:
         seconds: 30

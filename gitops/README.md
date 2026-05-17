@@ -13,6 +13,7 @@ Each environment entrypoint has its own `infrastructure` overlay. Shared infrast
 Key platform infrastructure components currently include:
 
 - `infrastructure/ingress` for Flux-managed ingress-nginx
+- `infrastructure/cilium` for post-bootstrap Cilium resources; RKE2 installs the base Cilium CNI before Flux starts
 - `infrastructure/cert-manager` for certificate automation and the lab `selfsigned` issuer
 - `infrastructure/kubernetes-dashboard` for Dashboard, ingress, and access token resources
 

@@ -247,6 +247,14 @@ sudo systemctl start libvirtd
 
 The RKE2 bundled ingress controller is disabled in [ansible/playbooks/deploy-rke2.yml](ansible/playbooks/deploy-rke2.yml). Ingress is managed by Flux from [../gitops/clusters/dev/infrastructure/ingress](../gitops/clusters/dev/infrastructure/ingress), including host ports 80 and 443.
 
+### CNI Ownership
+
+RKE2 installs Cilium during cluster bootstrap from [ansible/playbooks/deploy-rke2.yml](ansible/playbooks/deploy-rke2.yml). The playbook enables the RKE2 Cilium CNI, disables kube-proxy, and provides the pre-start `rke2-cilium` HelmChartConfig from [ansible/playbooks/rke2-manifests/pre/cilium.yaml](ansible/playbooks/rke2-manifests/pre/cilium.yaml). This must happen before Flux starts, because Flux requires working pod networking.
+
+When run against an existing dev cluster that previously used RKE2 Canal, the playbook also removes stale Canal CNI config files and host interfaces so new pods use Cilium consistently.
+
+The GitOps `infrastructure/cilium` directories are reserved for post-bootstrap Cilium resources such as policies, dashboards, or Hubble configuration. They are not the initial Cilium installer.
+
 ### Cluster Load Balancer
 
 Terraform creates one HAProxy load-balancer VM per environment, such as `dev-lb` at `10.10.1.10` with DNS name `lb.dev.w237.local`. The load balancer forwards RKE2 API traffic on `6443` and registration traffic on `9345` to all control-plane nodes. It also forwards ingress traffic on `80` and `443` to the current ingress node, `worker1`.

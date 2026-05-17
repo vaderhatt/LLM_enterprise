@@ -1,3 +1,5 @@
 # cilium
 
-CNI manifests and values for Cilium.
+Post-bootstrap Cilium resources for the prod cluster.
+
+The base Cilium CNI is installed by RKE2 during Ansible bootstrap, before Flux is available. Use this directory for Cilium resources that can be reconciled after cluster networking is already running.

@@ -1,0 +1,16 @@
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-cilium
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    kubeProxyReplacement: true
+    k8sServiceHost: {{ rke2_kubernetes_api_server_host }}
+    k8sServicePort: 6443
+    bpf:
+      masquerade: true
+      preallocateMaps: true
+      tproxy: true
+    bpfClockProbe: true
