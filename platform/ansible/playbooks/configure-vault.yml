@@ -17,7 +17,7 @@
     vault_init_file: "{{ lookup('env', 'VAULT_INIT_FILE') | default(playbook_dir ~ '/../.secrets/' ~ coredns_environment ~ '/vault-init.json', true) }}"
     vault_key_shares: 5
     vault_key_threshold: 3
-    cloud_init_wait_timeout: 300
+    cloud_init_wait_timeout: 1800
     cloud_init_wait_interval: 10
 
   handlers:

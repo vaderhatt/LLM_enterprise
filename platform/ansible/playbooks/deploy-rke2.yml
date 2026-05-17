@@ -5,6 +5,7 @@
   vars:
     rke2_kubernetes_api_server_host: "{{ rke2_api_endpoint | default(hostvars[groups['rke2_servers'][0]].ansible_host) }}"
     cluster_rke2_config:
+      disable-cloud-controller: true
       disable:
         - rke2-ingress-nginx
       tls-san:

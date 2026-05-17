@@ -19,9 +19,14 @@ ANSIBLE_KNOWN_HOSTS_PATH="$ANSIBLE_KEY_DIR/known_hosts"
 ANSIBLE_INVENTORY_KNOWN_HOSTS_PATH=".ssh/known_hosts"
 ANSIBLE_INVENTORY="inventory/$DEPLOY_ENV.ini"
 ANSIBLE_SECRETS_DIR="${ANSIBLE_SECRETS_DIR:-$ANSIBLE_DIR/.secrets/$DEPLOY_ENV}"
+ANSIBLE_SHARED_SECRETS_DIR="${ANSIBLE_SHARED_SECRETS_DIR:-$ANSIBLE_DIR/.secrets/shared}"
 SAMBA_ADMIN_PASSWORD_FILE="${SAMBA_ADMIN_PASSWORD_FILE:-$ANSIBLE_SECRETS_DIR/samba-admin-password}"
 LAM_PASSWORD_FILE="${LAM_PASSWORD_FILE:-$ANSIBLE_SECRETS_DIR/lam-password}"
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-$ANSIBLE_SECRETS_DIR/vault-init.json}"
+GITHUB_TOKEN_FILE="${GITHUB_TOKEN_FILE:-$ANSIBLE_SECRETS_DIR/github-token}"
+GITHUB_USER_FILE="${GITHUB_USER_FILE:-$ANSIBLE_SECRETS_DIR/github-user}"
+GITHUB_SHARED_TOKEN_FILE="${GITHUB_SHARED_TOKEN_FILE:-$ANSIBLE_SHARED_SECRETS_DIR/github-token}"
+GITHUB_SHARED_USER_FILE="${GITHUB_SHARED_USER_FILE:-$ANSIBLE_SHARED_SECRETS_DIR/github-user}"
 SSH_HOST_KEY_SCAN_ATTEMPTS="${SSH_HOST_KEY_SCAN_ATTEMPTS:-120}"
 SSH_HOST_KEY_SCAN_DELAY="${SSH_HOST_KEY_SCAN_DELAY:-5}"
 
@@ -422,6 +427,48 @@ load_samba_admin_password() {
     return 1
 }
 
+load_optional_secret_env() {
+    local variable_name="$1"
+    local primary_file="$2"
+    local shared_file="$3"
+    local description="$4"
+    local secret_value="${!variable_name:-}"
+    local source_file=""
+
+    if [ -n "$secret_value" ]; then
+        export "$variable_name"
+        return 0
+    fi
+
+    if [ -r "$primary_file" ]; then
+        source_file="$primary_file"
+    elif [ -r "$shared_file" ]; then
+        source_file="$shared_file"
+    else
+        return 1
+    fi
+
+    secret_value="$(tr -d '\r\n' < "$source_file")"
+    if [ -z "$secret_value" ]; then
+        log_warn "$description file is empty: $source_file"
+        return 1
+    fi
+
+    printf -v "$variable_name" '%s' "$secret_value"
+    export "$variable_name"
+    chmod 600 "$source_file"
+    log_info "Loaded $description from: $source_file"
+}
+
+load_github_credentials() {
+    load_optional_secret_env GITHUB_USER "$GITHUB_USER_FILE" "$GITHUB_SHARED_USER_FILE" "GitHub username" || true
+    load_optional_secret_env GITHUB_TOKEN "$GITHUB_TOKEN_FILE" "$GITHUB_SHARED_TOKEN_FILE" "GitHub token" || true
+
+    if [ -z "${GITHUB_TOKEN:-}" ]; then
+        log_warn "No GitHub token found in GITHUB_TOKEN, $GITHUB_TOKEN_FILE, or $GITHUB_SHARED_TOKEN_FILE"
+    fi
+}
+
 configure_samba_addc() {
     log_info "Configuring Samba Active Directory domain controller..."
     cd "$ANSIBLE_DIR"
@@ -471,7 +518,8 @@ bootstrap_flux() {
     cd "$ANSIBLE_DIR"
 
     INVENTORY="$ANSIBLE_INVENTORY"
-    ansible-playbook playbooks/bootstrap-flux.yml -i "$INVENTORY"
+    load_github_credentials
+    GITHUB_USER="${GITHUB_USER:-}" GITHUB_TOKEN="${GITHUB_TOKEN:-}" ansible-playbook playbooks/bootstrap-flux.yml -i "$INVENTORY"
     log_success "Flux bootstrap completed"
 }
 

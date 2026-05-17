@@ -388,6 +388,14 @@ export GITHUB_TOKEN=<github-token-with-repo-read-access>
 ansible-playbook playbooks/bootstrap-flux.yml -i inventory/dev.ini
 ```
 
+When using `../deploy.sh`, credentials are loaded in this order:
+
+1. `GITHUB_USER` and `GITHUB_TOKEN` from the shell environment.
+2. Environment-specific files such as `.secrets/dev/github-user` and `.secrets/dev/github-token`.
+3. Shared files `.secrets/shared/github-user` and `.secrets/shared/github-token`, usable by dev, stage, and prod.
+
+The `.secrets` directory is ignored by git. Use the shared files when all environments should bootstrap Flux with the same GitHub credential.
+
 For a public repository that does not require authentication, disable the token requirement:
 
 ```bash

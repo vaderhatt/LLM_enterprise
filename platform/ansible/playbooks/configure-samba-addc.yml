@@ -12,7 +12,7 @@
     samba_admin_password_from_file: "{{ lookup('ansible.builtin.file', samba_admin_password_file, errors='ignore') | trim }}"
     samba_admin_password: "{{ lookup('env', 'SAMBA_ADMIN_PASSWORD') | default(samba_admin_password_from_file, true) }}"
     samba_dns_forwarder: 1.1.1.1
-    cloud_init_wait_timeout: 300
+    cloud_init_wait_timeout: 1800
     cloud_init_wait_interval: 10
 
   handlers:
