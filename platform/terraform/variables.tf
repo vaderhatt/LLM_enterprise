@@ -93,25 +93,6 @@ variable "load_balancer_vm" {
   }
 }
 
-variable "domain_controller_vm" {
-  description = "Sizing for the Samba AD domain-controller VM"
-  type = object({
-    cpus         = number
-    memory_mib   = number
-    disk_size_gb = number
-  })
-  default = {
-    cpus         = 2
-    memory_mib   = 2048
-    disk_size_gb = 20
-  }
-
-  validation {
-    condition     = var.domain_controller_vm.cpus > 0 && var.domain_controller_vm.memory_mib >= 1024 && var.domain_controller_vm.disk_size_gb > 0
-    error_message = "domain_controller_vm must use positive CPU and disk values, and at least 1024 MiB memory."
-  }
-}
-
 variable "vault_vm" {
   description = "Sizing for the HashiCorp Vault VM"
   type = object({
@@ -175,17 +156,6 @@ variable "load_balancer_ip" {
   }
 }
 
-variable "domain_controller_ip" {
-  description = "Static IP for the Samba AD domain controller. Defaults to host .30 in network_cidr."
-  type        = string
-  default     = null
-
-  validation {
-    condition     = var.domain_controller_ip == null ? true : can(cidrhost("${var.domain_controller_ip}/32", 0))
-    error_message = "domain_controller_ip must be a valid IPv4 address."
-  }
-}
-
 variable "vault_ip" {
   description = "Static IP for the HashiCorp Vault server. Defaults to host .40 in network_cidr."
   type        = string
@@ -216,28 +186,6 @@ variable "load_balancer_hostname" {
   validation {
     condition     = var.load_balancer_hostname == null ? true : can(regex("^[A-Za-z0-9.-]+$", var.load_balancer_hostname))
     error_message = "load_balancer_hostname must contain only letters, numbers, dots, and hyphens."
-  }
-}
-
-variable "samba_ad_realm" {
-  description = "Samba Active Directory Kerberos realm"
-  type        = string
-  default     = "ad.w237.local"
-
-  validation {
-    condition     = can(regex("^[A-Za-z0-9.-]+$", var.samba_ad_realm)) && length(trimspace(var.samba_ad_realm)) > 0
-    error_message = "samba_ad_realm must contain only letters, numbers, dots, and hyphens."
-  }
-}
-
-variable "samba_ad_netbios_domain" {
-  description = "Samba Active Directory NetBIOS domain name"
-  type        = string
-  default     = "AD"
-
-  validation {
-    condition     = can(regex("^[A-Za-z0-9-]{1,15}$", var.samba_ad_netbios_domain))
-    error_message = "samba_ad_netbios_domain must be 1-15 letters, numbers, or hyphens."
   }
 }
 

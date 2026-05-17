@@ -20,8 +20,6 @@ ANSIBLE_INVENTORY_KNOWN_HOSTS_PATH=".ssh/known_hosts"
 ANSIBLE_INVENTORY="inventory/$DEPLOY_ENV.ini"
 ANSIBLE_SECRETS_DIR="${ANSIBLE_SECRETS_DIR:-$ANSIBLE_DIR/.secrets/$DEPLOY_ENV}"
 ANSIBLE_SHARED_SECRETS_DIR="${ANSIBLE_SHARED_SECRETS_DIR:-$ANSIBLE_DIR/.secrets/shared}"
-SAMBA_ADMIN_PASSWORD_FILE="${SAMBA_ADMIN_PASSWORD_FILE:-$ANSIBLE_SECRETS_DIR/samba-admin-password}"
-LAM_PASSWORD_FILE="${LAM_PASSWORD_FILE:-$ANSIBLE_SECRETS_DIR/lam-password}"
 VAULT_INIT_FILE="${VAULT_INIT_FILE:-$ANSIBLE_SECRETS_DIR/vault-init.json}"
 GITHUB_TOKEN_FILE="${GITHUB_TOKEN_FILE:-$ANSIBLE_SECRETS_DIR/github-token}"
 GITHUB_USER_FILE="${GITHUB_USER_FILE:-$ANSIBLE_SECRETS_DIR/github-user}"
@@ -60,30 +58,6 @@ run_as_root() {
     else
         sudo "$@"
     fi
-}
-
-generate_password() {
-    if command -v openssl > /dev/null 2>&1; then
-        openssl rand -base64 24
-    else
-        LC_ALL=C tr -dc 'A-Za-z0-9_@%+=:,.~-' < /dev/urandom | head -c 32
-        printf '\n'
-    fi
-}
-
-ensure_secret_file() {
-    local file_path="$1"
-    local description="$2"
-
-    if [ -s "$file_path" ]; then
-        chmod 600 "$file_path"
-        return 0
-    fi
-
-    install -d -m 700 "$(dirname "$file_path")"
-    generate_password > "$file_path"
-    chmod 600 "$file_path"
-    log_success "Generated $description: $file_path"
 }
 
 package_for_command() {
@@ -203,16 +177,6 @@ check_prerequisites() {
     fi
     
     log_success "All prerequisites met"
-}
-
-check_sensitive_inputs() {
-    log_info "Checking local generated secrets..."
-
-    ensure_secret_file "$SAMBA_ADMIN_PASSWORD_FILE" "Samba AD Administrator password"
-    ensure_secret_file "$LAM_PASSWORD_FILE" "LAM profile password"
-
-    log_success "Required local secrets are present"
-    log_info "Generated secrets are intentionally ignored by git under: $ANSIBLE_DIR/.secrets"
 }
 
 ensure_ansible_system_user() {
@@ -412,21 +376,6 @@ configure_dns_service() {
     log_success "CoreDNS service configured"
 }
 
-load_samba_admin_password() {
-    if [ -n "${SAMBA_ADMIN_PASSWORD:-}" ]; then
-        export SAMBA_ADMIN_PASSWORD
-        return 0
-    fi
-
-    if [ -r "$SAMBA_ADMIN_PASSWORD_FILE" ]; then
-        SAMBA_ADMIN_PASSWORD="$(tr -d '\r\n' < "$SAMBA_ADMIN_PASSWORD_FILE")"
-        export SAMBA_ADMIN_PASSWORD
-        return 0
-    fi
-
-    return 1
-}
-
 load_optional_secret_env() {
     local variable_name="$1"
     local primary_file="$2"
@@ -469,21 +418,6 @@ load_github_credentials() {
     fi
 }
 
-configure_samba_addc() {
-    log_info "Configuring Samba Active Directory domain controller..."
-    cd "$ANSIBLE_DIR"
-
-    if ! load_samba_admin_password; then
-        log_warn "SAMBA_ADMIN_PASSWORD is required to configure Samba AD DC"
-        log_warn "Set it in the environment or write it to: $SAMBA_ADMIN_PASSWORD_FILE"
-        return 1
-    fi
-
-    INVENTORY="$ANSIBLE_INVENTORY"
-    ansible-playbook playbooks/configure-samba-addc.yml -i "$INVENTORY" -b
-    log_success "Samba AD DC configured"
-}
-
 configure_vault() {
     log_info "Configuring Vault server..."
     cd "$ANSIBLE_DIR"
@@ -493,13 +427,13 @@ configure_vault() {
     log_success "Vault server configured"
 }
 
-configure_ad_ui_secret() {
-    log_info "Configuring AD UI Kubernetes secret..."
+configure_vault_kubernetes_auth() {
+    log_info "Configuring Vault Kubernetes auth for External Secrets..."
     cd "$ANSIBLE_DIR"
 
     INVENTORY="$ANSIBLE_INVENTORY"
-    SAMBA_ADMIN_PASSWORD_FILE="$SAMBA_ADMIN_PASSWORD_FILE" LAM_PASSWORD_FILE="$LAM_PASSWORD_FILE" ansible-playbook playbooks/configure-ad-ui-secret.yml -i "$INVENTORY"
-    log_success "AD UI secret configured"
+    VAULT_INIT_FILE="$VAULT_INIT_FILE" ansible-playbook playbooks/configure-vault-kubernetes-auth.yml -i "$INVENTORY"
+    log_success "Vault Kubernetes auth configured"
 }
 
 # Run RKE2 deployment
@@ -528,7 +462,6 @@ main() {
     log_info "Starting RKE2 Infrastructure Deployment"
     
     check_prerequisites || exit 1
-    check_sensitive_inputs || exit 1
     ensure_ansible_system_user || exit 1
     setup_ansible_ssh_key || exit 1
     terraform_apply || exit 1
@@ -538,12 +471,11 @@ main() {
     test_ssh_connectivity || { log_warn "SSH connectivity test failed. Check network and SSH keys."; exit 1; }
     read -p "Ready to run Ansible playbooks? (yes/no): " -r || REPLY="no"
     if [[ $REPLY == "yes" ]]; then
-        configure_samba_addc || exit 1
         configure_vault || exit 1
         configure_dns_service || exit 1
         run_prerequisites || exit 1
         run_rke2_deploy || exit 1
-        configure_ad_ui_secret || exit 1
+        configure_vault_kubernetes_auth || exit 1
         read -p "Ready to bootstrap Flux GitOps? (yes/no): " -r || REPLY="no"
         if [[ $REPLY == "yes" ]]; then
             bootstrap_flux || exit 1
@@ -556,13 +488,11 @@ main() {
     else
         log_warn "Ansible playbooks skipped"
         log_info "To run manually, use:"
-        log_info "  # Password files are generated automatically in ansible/.secrets/$DEPLOY_ENV by ./deploy.sh"
-        log_info "  ansible-playbook ansible/playbooks/configure-samba-addc.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  VAULT_INIT_FILE=ansible/.secrets/$DEPLOY_ENV/vault-init.json ansible-playbook ansible/playbooks/configure-vault.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/configure-dns.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/prerequisites.yml -i ansible/$ANSIBLE_INVENTORY -b"
         log_info "  ansible-playbook ansible/playbooks/deploy-rke2.yml -i ansible/$ANSIBLE_INVENTORY -b"
-        log_info "  SAMBA_ADMIN_PASSWORD_FILE=ansible/.secrets/$DEPLOY_ENV/samba-admin-password LAM_PASSWORD_FILE=ansible/.secrets/$DEPLOY_ENV/lam-password ansible-playbook ansible/playbooks/configure-ad-ui-secret.yml -i ansible/$ANSIBLE_INVENTORY"
+        log_info "  VAULT_INIT_FILE=ansible/.secrets/$DEPLOY_ENV/vault-init.json ansible-playbook ansible/playbooks/configure-vault-kubernetes-auth.yml -i ansible/$ANSIBLE_INVENTORY"
         log_info "  ansible-playbook ansible/playbooks/bootstrap-flux.yml -i ansible/$ANSIBLE_INVENTORY"
     fi
 }

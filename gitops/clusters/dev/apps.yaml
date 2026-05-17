@@ -6,8 +6,9 @@ metadata:
 spec:
   dependsOn:
     - name: infrastructure
+    - name: vault-secrets
   interval: 10m
-  path: ./gitops/apps
+  path: ./gitops/clusters/dev/apps
   prune: true
   sourceRef:
     kind: GitRepository

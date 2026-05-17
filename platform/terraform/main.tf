@@ -28,10 +28,6 @@ locals {
   storage_pool_path = "${local.data_dir}/VM/${local.storage_pool_name}"
   ubuntu_image_path = coalesce(var.ubuntu_image_path, "${local.data_dir}/img/ubuntu-26.04-server-cloudimg-amd64.img")
   load_balancer_ip  = coalesce(var.load_balancer_ip, cidrhost(var.network_cidr, 10))
-  domain_controller_ip = coalesce(
-    var.domain_controller_ip,
-    cidrhost(var.network_cidr, 30)
-  )
   vault_ip = coalesce(
     var.vault_ip,
     cidrhost(var.network_cidr, 40)
@@ -154,21 +150,6 @@ module "load_balancer" {
   network_config = templatefile("${path.module}/network_config.cfg", { ip_address = local.load_balancer_ip, network_gateway = var.network_gateway })
 }
 
-module "domain_controller" {
-  source = "./modules/node"
-
-  depends_on = [null_resource.storage_pool_active]
-
-  name                        = "${local.env_prefix}addc1"
-  ip_address                  = local.domain_controller_ip
-  ubuntu_image_base_volume_id = libvirt_volume.ubuntu_base.id
-  vm                          = var.domain_controller_vm
-  network_id                  = libvirt_network.rke2_net.id
-  storage_pool                = local.storage_pool_name
-  user_data                   = templatefile("${path.module}/cloud_init.cfg", { hostname = "addc1", ansible_user = var.ansible_user, ssh_public_key = var.ssh_public_key })
-  network_config              = templatefile("${path.module}/network_config.cfg", { ip_address = local.domain_controller_ip, network_gateway = var.network_gateway })
-}
-
 module "vault" {
   source = "./modules/node"
 
@@ -203,15 +184,12 @@ module "worker" {
 # Generate Ansible inventory from infrastructure
 locals {
   ansible_inventory = templatefile("${path.module}/inventory.tpl", {
-    environment             = var.environment
-    control_plane_nodes     = module.control_plane
-    worker_nodes            = module.worker
-    load_balancer_node      = module.load_balancer
-    domain_controller_node  = module.domain_controller
-    vault_node              = module.vault
-    load_balancer_hostname  = local.load_balancer_hostname
-    internal_domain         = var.internal_domain
-    samba_ad_realm          = var.samba_ad_realm
-    samba_ad_netbios_domain = var.samba_ad_netbios_domain
+    environment            = var.environment
+    control_plane_nodes    = module.control_plane
+    worker_nodes           = module.worker
+    load_balancer_node     = module.load_balancer
+    vault_node             = module.vault
+    load_balancer_hostname = local.load_balancer_hostname
+    internal_domain        = var.internal_domain
   })
 }

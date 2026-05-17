@@ -1,0 +1,257 @@
+---
+- name: Configure Vault Kubernetes auth for External Secrets
+  hosts: localhost
+  gather_facts: false
+  vars:
+    kubeconfig_path: "{{ playbook_dir }}/kubeconfig"
+    vault_environment: "{{ coredns_environment | default('dev') }}"
+    vault_init_file: "{{ lookup('env', 'VAULT_INIT_FILE') | default(playbook_dir ~ '/../.secrets/' ~ vault_environment ~ '/vault-init.json', true) }}"
+    vault_cli_path: /usr/local/bin/vault
+    vault_address: https://127.0.0.1:8200
+    vault_kubernetes_host: "https://{{ rke2_api_endpoint }}:6443"
+    vault_kubernetes_auth_path: kubernetes
+    vault_policy_name: external-secrets
+    vault_role_name: external-secrets
+    vault_kv_mount: secret
+    vault_tls_cert_path: /etc/vault.d/tls/vault.crt
+    vault_ca_local_path: "/tmp/{{ vault_environment }}-vault-ca.crt"
+    vault_token_reviewer_remote_path: /tmp/external-secrets-token-reviewer.jwt
+    vault_kubernetes_ca_remote_path: /tmp/kubernetes-ca.crt
+    external_secrets_namespace: external-secrets
+    external_secrets_vault_auth_service_account: external-secrets-vault-auth
+    external_secrets_vault_token_secret: external-secrets-vault-token
+    external_secrets_vault_ca_secret: vault-ca
+
+  tasks:
+    - name: Check kubeconfig exists
+      ansible.builtin.stat:
+        path: "{{ kubeconfig_path }}"
+      register: vault_auth_kubeconfig
+
+    - name: Fail when kubeconfig is missing
+      ansible.builtin.fail:
+        msg: "Kubeconfig not found at {{ kubeconfig_path }}. Deploy RKE2 and fetch kubeconfig first."
+      when: not vault_auth_kubeconfig.stat.exists
+
+    - name: Check Vault init file exists
+      ansible.builtin.stat:
+        path: "{{ vault_init_file }}"
+      register: vault_auth_init_file
+
+    - name: Fail when Vault init file is missing
+      ansible.builtin.fail:
+        msg: "Vault init file not found at {{ vault_init_file }}. Run configure-vault.yml first."
+      when: not vault_auth_init_file.stat.exists
+
+    - name: Load Vault root token
+      ansible.builtin.set_fact:
+        vault_root_token: "{{ (lookup('ansible.builtin.file', vault_init_file) | from_json).root_token }}"
+      no_log: true
+
+    - name: Create External Secrets namespace
+      ansible.builtin.command:
+        cmd: "kubectl --kubeconfig {{ kubeconfig_path }} create namespace {{ external_secrets_namespace }} --dry-run=client -o yaml"
+      register: external_secrets_namespace_manifest
+      changed_when: false
+
+    - name: Apply External Secrets namespace
+      ansible.builtin.command:
+        cmd: "kubectl --kubeconfig {{ kubeconfig_path }} apply -f -"
+        stdin: "{{ external_secrets_namespace_manifest.stdout }}"
+      register: external_secrets_namespace_apply
+      changed_when: "'created' in external_secrets_namespace_apply.stdout or 'configured' in external_secrets_namespace_apply.stdout"
+
+    - name: Apply External Secrets Vault auth resources
+      ansible.builtin.command:
+        cmd: "kubectl --kubeconfig {{ kubeconfig_path }} apply -f -"
+        stdin: |
+          ---
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: {{ external_secrets_vault_auth_service_account }}
+            namespace: {{ external_secrets_namespace }}
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: external-secrets-vault-tokenreview
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: system:auth-delegator
+          subjects:
+            - kind: ServiceAccount
+              name: {{ external_secrets_vault_auth_service_account }}
+              namespace: {{ external_secrets_namespace }}
+      register: external_secrets_vault_auth_apply
+      changed_when: "'created' in external_secrets_vault_auth_apply.stdout or 'configured' in external_secrets_vault_auth_apply.stdout"
+
+    - name: Apply Vault token reviewer secret
+      ansible.builtin.command:
+        cmd: "kubectl --kubeconfig {{ kubeconfig_path }} apply -f -"
+        stdin: |
+          ---
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: {{ external_secrets_vault_token_secret }}
+            namespace: {{ external_secrets_namespace }}
+            annotations:
+              kubernetes.io/service-account.name: {{ external_secrets_vault_auth_service_account }}
+          type: kubernetes.io/service-account-token
+      register: external_secrets_vault_token_apply
+      changed_when: "'created' in external_secrets_vault_token_apply.stdout or 'configured' in external_secrets_vault_token_apply.stdout"
+      no_log: true
+
+    - name: Read Vault token reviewer JWT
+      ansible.builtin.shell: >-
+        kubectl --kubeconfig {{ kubeconfig_path }} -n {{ external_secrets_namespace }}
+        get secret {{ external_secrets_vault_token_secret }} -o jsonpath='{.data.token}' | base64 -d
+      register: external_secrets_vault_token
+      changed_when: false
+      retries: 12
+      delay: 5
+      until: external_secrets_vault_token.stdout | length > 0
+      no_log: true
+
+    - name: Read Kubernetes CA for Vault TokenReview
+      ansible.builtin.shell: >-
+        kubectl --kubeconfig {{ kubeconfig_path }} -n {{ external_secrets_namespace }}
+        get secret {{ external_secrets_vault_token_secret }} -o jsonpath='{.data.ca\.crt}' | base64 -d
+      register: external_secrets_kubernetes_ca
+      changed_when: false
+
+    - name: Read Vault TLS certificate
+      ansible.builtin.slurp:
+        src: "{{ vault_tls_cert_path }}"
+      register: vault_tls_certificate
+      delegate_to: "{{ groups['vault'][0] }}"
+      become: true
+
+    - name: Write local Vault CA bundle for External Secrets
+      ansible.builtin.copy:
+        dest: "{{ vault_ca_local_path }}"
+        content: "{{ vault_tls_certificate.content | b64decode }}"
+        mode: "0600"
+
+    - name: Apply Vault CA secret for External Secrets
+      ansible.builtin.shell: >-
+        kubectl --kubeconfig {{ kubeconfig_path }} -n {{ external_secrets_namespace }}
+        create secret generic {{ external_secrets_vault_ca_secret }}
+        --from-file=ca.crt={{ vault_ca_local_path }}
+        --dry-run=client -o yaml |
+        kubectl --kubeconfig {{ kubeconfig_path }} apply -f -
+      register: external_secrets_vault_ca_apply
+      changed_when: "'created' in external_secrets_vault_ca_apply.stdout or 'configured' in external_secrets_vault_ca_apply.stdout"
+
+    - name: Write Kubernetes auth files on Vault host
+      ansible.builtin.copy:
+        dest: "{{ item.dest }}"
+        content: "{{ item.content }}"
+        owner: root
+        group: root
+        mode: "0600"
+      loop:
+        - { dest: "{{ vault_token_reviewer_remote_path }}", content: "{{ external_secrets_vault_token.stdout }}" }
+        - { dest: "{{ vault_kubernetes_ca_remote_path }}", content: "{{ external_secrets_kubernetes_ca.stdout }}" }
+      delegate_to: "{{ groups['vault'][0] }}"
+      become: true
+      no_log: true
+
+    - name: Enable Vault Kubernetes auth backend
+      ansible.builtin.command:
+        cmd: "{{ vault_cli_path }} auth enable -path={{ vault_kubernetes_auth_path }} kubernetes"
+      environment:
+        VAULT_ADDR: "{{ vault_address }}"
+        VAULT_SKIP_VERIFY: "true"
+        VAULT_TOKEN: "{{ vault_root_token }}"
+      register: vault_kubernetes_auth_enable
+      changed_when: vault_kubernetes_auth_enable.rc == 0
+      failed_when:
+        - vault_kubernetes_auth_enable.rc != 0
+        - "'path is already in use' not in vault_kubernetes_auth_enable.stderr"
+      delegate_to: "{{ groups['vault'][0] }}"
+      become: true
+      no_log: true
+
+    - name: Configure Vault Kubernetes auth backend
+      ansible.builtin.command:
+        cmd: >-
+          {{ vault_cli_path }} write auth/{{ vault_kubernetes_auth_path }}/config
+          token_reviewer_jwt=@{{ vault_token_reviewer_remote_path }}
+          kubernetes_host={{ vault_kubernetes_host }}
+          kubernetes_ca_cert=@{{ vault_kubernetes_ca_remote_path }}
+          disable_iss_validation=true
+      environment:
+        VAULT_ADDR: "{{ vault_address }}"
+        VAULT_SKIP_VERIFY: "true"
+        VAULT_TOKEN: "{{ vault_root_token }}"
+      delegate_to: "{{ groups['vault'][0] }}"
+      become: true
+      no_log: true
+
+    - name: Enable Vault KV secrets engine
+      ansible.builtin.command:
+        cmd: "{{ vault_cli_path }} secrets enable -path={{ vault_kv_mount }} kv-v2"
+      environment:
+        VAULT_ADDR: "{{ vault_address }}"
+        VAULT_SKIP_VERIFY: "true"
+        VAULT_TOKEN: "{{ vault_root_token }}"
+      register: vault_kv_enable
+      changed_when: vault_kv_enable.rc == 0
+      failed_when:
+        - vault_kv_enable.rc != 0
+        - "'path is already in use' not in vault_kv_enable.stderr"
+      delegate_to: "{{ groups['vault'][0] }}"
+      become: true
+
+    - name: Write Vault policy for External Secrets
+      ansible.builtin.command:
+        cmd: "{{ vault_cli_path }} policy write {{ vault_policy_name }} -"
+        stdin: |
+          path "{{ vault_kv_mount }}/data/*" {
+            capabilities = ["read"]
+          }
+          path "{{ vault_kv_mount }}/metadata/*" {
+            capabilities = ["read"]
+          }
+      environment:
+        VAULT_ADDR: "{{ vault_address }}"
+        VAULT_SKIP_VERIFY: "true"
+        VAULT_TOKEN: "{{ vault_root_token }}"
+      delegate_to: "{{ groups['vault'][0] }}"
+      become: true
+
+    - name: Write Vault Kubernetes auth role for External Secrets
+      ansible.builtin.command:
+        cmd: >-
+          {{ vault_cli_path }} write auth/{{ vault_kubernetes_auth_path }}/role/{{ vault_role_name }}
+          bound_service_account_names={{ external_secrets_vault_auth_service_account }}
+          bound_service_account_namespaces={{ external_secrets_namespace }}
+          policies={{ vault_policy_name }}
+          ttl=24h
+      environment:
+        VAULT_ADDR: "{{ vault_address }}"
+        VAULT_SKIP_VERIFY: "true"
+        VAULT_TOKEN: "{{ vault_root_token }}"
+      delegate_to: "{{ groups['vault'][0] }}"
+      become: true
+      no_log: true
+
+    - name: Remove temporary Vault host token file
+      ansible.builtin.file:
+        path: "{{ vault_token_reviewer_remote_path }}"
+        state: absent
+      delegate_to: "{{ groups['vault'][0] }}"
+      become: true
+      no_log: true
+
+    - name: Remove local temporary Vault CA file
+      ansible.builtin.file:
+        path: "{{ vault_ca_local_path }}"
+        state: absent
+
+    - name: Show Vault Kubernetes auth status
+      ansible.builtin.debug:
+        msg: "Vault Kubernetes auth and External Secrets CA material are configured for {{ vault_environment }}."

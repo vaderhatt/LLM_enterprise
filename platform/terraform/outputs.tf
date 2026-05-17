@@ -27,16 +27,6 @@ output "load_balancer_node" {
   }
 }
 
-output "domain_controller_node" {
-  description = "Samba AD domain controller node details"
-  value = {
-    ip             = module.domain_controller.ip_address
-    name           = module.domain_controller.name
-    realm          = var.samba_ad_realm
-    netbios_domain = var.samba_ad_netbios_domain
-  }
-}
-
 output "vault_node" {
   description = "HashiCorp Vault node details"
   value = {

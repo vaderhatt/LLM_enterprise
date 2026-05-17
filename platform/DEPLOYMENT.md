@@ -282,6 +282,7 @@ cp3.dev.w237.local     10.10.1.13
 worker1.dev.w237.local 10.10.1.21
 worker2.dev.w237.local 10.10.1.22
 worker3.dev.w237.local 10.10.1.23
+vault.dev.w237.local   10.10.1.40
 ```
 
 Test it from the host or a cluster VM:
@@ -289,44 +290,6 @@ Test it from the host or a cluster VM:
 ```bash
 dig @10.10.1.10 k8s.dev.w237.local
 ```
-
-### Samba Active Directory
-
-Terraform creates one Samba AD DC VM per environment, such as `dev-addc1` at `10.10.1.30`. The default AD DNS zone is `ad.w237.local`, the Kerberos realm is `AD.W237.LOCAL`, and the NetBIOS domain is `AD`. CoreDNS delegates `ad.w237.local` to the Samba DC so AD records such as Kerberos and LDAP SRV records are resolved by Samba's internal DNS server.
-
-Configure or refresh Samba AD DC with:
-
-```bash
-cd platform/ansible
-ansible-playbook playbooks/configure-samba-addc.yml -i inventory/dev.ini -b
-ansible-playbook playbooks/configure-dns.yml -i inventory/dev.ini -b
-```
-
-Verify AD DNS through CoreDNS:
-
-```bash
-dig @10.10.1.10 _ldap._tcp.ad.w237.local SRV
-dig @10.10.1.10 addc1.ad.w237.local
-```
-
-The deployment script generates the Samba `Administrator` password when missing and stores it in `.secrets/<env>/samba-admin-password`, which is intentionally ignored by git. You can override the file path with `SAMBA_ADMIN_PASSWORD_FILE` or override the value for one run with `SAMBA_ADMIN_PASSWORD`.
-
-### AD Management UI
-
-LDAP Account Manager runs as the `ad-ui` app and stores its profile configuration in the `lam-config` PVC. The app expects the `ad-ui/ad-ui-secrets` Kubernetes Secret, created from local ignored password files:
-
-```bash
-cd platform/ansible
-ansible-playbook playbooks/configure-ad-ui-secret.yml -i inventory/dev.ini
-```
-
-The app is exposed at:
-
-```text
-https://ad.dev.w237.local/lam/
-```
-
-The deployment script generates `.secrets/<env>/lam-password` when missing. Use this value for the LAM configuration/profile login. Use `.secrets/<env>/samba-admin-password` for the Samba `Administrator` account when managing AD users and groups. The LAM profile is seeded for Samba AD with `windowsUser` and `windowsGroup` account modules on first pod startup and on later restarts.
 
 ### Vault
 
@@ -353,6 +316,17 @@ platform/ansible/.secrets/dev/vault-init.json
 ```
 
 Do not commit or share this file. It is required for future automated unseal runs unless you migrate to an auto-unseal backend.
+
+### External Secrets
+
+External Secrets Operator is installed by Flux from `gitops/clusters/<env>/infrastructure/external-secrets`. Vault access is declared in GitOps with a `ClusterSecretStore`; Vault's Kubernetes auth backend and the public Vault CA bundle are configured by Ansible after RKE2 is available:
+
+```bash
+cd platform/ansible
+VAULT_INIT_FILE=.secrets/dev/vault-init.json ansible-playbook playbooks/configure-vault-kubernetes-auth.yml -i inventory/dev.ini
+```
+
+Application secrets should be written to Vault under the `secret/` KV v2 mount. Workloads consume them through `ExternalSecret` manifests instead of committed or hand-applied Kubernetes `Secret` objects.
 
 ### Ansible Playbook Issues
 
