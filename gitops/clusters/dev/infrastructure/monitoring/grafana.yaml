@@ -1,0 +1,58 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: grafana
+      version: 10.5.15
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: monitoring
+  values:
+    fullnameOverride: grafana
+    persistence:
+      enabled: true
+      storageClassName: local-path
+      size: 5Gi
+    admin:
+      existingSecret: ""
+    grafana.ini:
+      auth.anonymous:
+        enabled: true
+        org_role: Viewer
+      auth.basic:
+        enabled: false
+      users:
+        viewers_can_edit: false
+    datasources:
+      datasources.yaml:
+        apiVersion: 1
+        datasources:
+          - name: Prometheus
+            type: prometheus
+            access: proxy
+            url: http://prometheus-server.monitoring.svc.cluster.local
+            isDefault: true
+    ingress:
+      enabled: true
+      ingressClassName: nginx
+      annotations:
+        cert-manager.io/cluster-issuer: selfsigned
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      hosts:
+        - grafana.dev.w237.local
+      tls:
+        - secretName: grafana-tls
+          hosts:
+            - grafana.dev.w237.local
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
