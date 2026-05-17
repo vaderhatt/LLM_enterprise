@@ -5,6 +5,14 @@ metadata:
   namespace: monitoring
 spec:
   interval: 30m
+  timeout: 10m
+  install:
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  upgrade:
+    remediation:
+      retries: 3
   chart:
     spec:
       chart: prometheus
